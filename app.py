@@ -5,10 +5,13 @@ import logging
 from datetime import datetime
 import pytz
 import base64
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)  # Enables Cross-Origin Resource Sharing
 
 LOGO_PATH = "logo3.png"
 
-app = Flask(__name__)
 app.secret_key = "some_secret_key_for_session"
 
 # Set up logging
