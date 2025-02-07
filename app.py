@@ -6,7 +6,7 @@ from datetime import datetime
 import pytz
 import base64
 
-LOGO_PATH = "/Users/safinchowdhury/Documents/logo3.png"
+LOGO_PATH = "logo3.png"
 
 app = Flask(__name__)
 app.secret_key = "some_secret_key_for_session"
