@@ -6,18 +6,10 @@ from datetime import datetime
 import pytz
 import base64
 
-import os
-from flask import Flask
-
-app = Flask(__name__)
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # If PORT isn’t set, default to 5000
-    app.run(host="0.0.0.0", port=port)        # Bind to that port
-
-
 LOGO_PATH = "logo3.png"
 
+app = Flask(__name__)
+app.secret_key = "some_secret_key_for_session"
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
