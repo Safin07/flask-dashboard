@@ -5,23 +5,15 @@ import logging
 from datetime import datetime
 import pytz
 import base64
-import os
+
 import os
 from flask import Flask
 
-
 app = Flask(__name__)
 
-# Hardcoded secret key (example only!)
-app.secret_key = "847b4328993b253a4fa1541a29dadff2cf14f4cdb2c207def26cc00f2e10c5e6"
-
-@app.route("/")
-def index():
-    return "Hello, world!"
-
 if __name__ == "__main__":
-    app.run(debug=True)
-
+    port = int(os.environ.get("PORT", 5000))  # If PORT isn’t set, default to 5000
+    app.run(host="0.0.0.0", port=port)        # Bind to that port
 
 
 LOGO_PATH = "logo3.png"
