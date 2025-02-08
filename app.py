@@ -754,7 +754,7 @@ def data_view():
          fota_table=fota_table,
          cota_table=cota_table)
 
-@app.route('/api/machine_data')
+@app.route('/api/machine_data', methods=['POST'])
 def machine_data_lazy():
     draw = int(request.args.get('draw', 1))
     start = int(request.args.get('start', 0))
