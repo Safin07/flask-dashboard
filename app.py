@@ -756,32 +756,18 @@ def data_view():
          fota_table=fota_table,
          cota_table=cota_table)
 
-@app.route('/api/machine_data', methods=['POST'])
+@app.route('/api/machine_data', methods=['POST'])  # Allow POST requests
 def machine_data_lazy():
-    draw = int(request.args.get('draw', 1))
-    start = int(request.args.get('start', 0))
-    length = int(request.args.get('length', 10))
-    machine_id = request.args.get('machine_id', None)
-    logging.info(f"Filters - arrivalDate_min: {arrival_date_min}, arrivalDate_max: {arrival_date_max}")
+    data = request.get_json()  # Get data from the POST request body
+    draw = data.get('draw', 1)
+    start = data.get('start', 0)
+    length = data.get('length', 10)
+    machine_id = data.get('machine_id', None)
+    
     if not machine_id:
         return jsonify({"draw": draw, "recordsTotal": 0, "recordsFiltered": 0, "data": []})
     
-    filters = {
-        "aqi_min": request.args.get("aqi_min", None),
-        "aqi_max": request.args.get("aqi_max", None),
-        "humidity_min": request.args.get("humidity_min", None),
-        "humidity_max": request.args.get("humidity_max", None),
-        "roomTemperature_min": request.args.get("roomTemperature_min", None),
-        "roomTemperature_max": request.args.get("roomTemperature_max", None),
-        "busVoltage_min": request.args.get("busVoltage_min", None),
-        "busVoltage_max": request.args.get("busVoltage_max", None),
-        "arrivalDate_min": request.args.get("arrivalDate_min", None),
-        "arrivalDate_max": request.args.get("arrivalDate_max", None),
-        "arrivalTime_min": request.args.get("arrivalTime_min", None),
-        "arrivalTime_max": request.args.get("arrivalTime_max", None)
-    }
-    
-    page = (start // length) + 1
+    # Fetch data and apply filters
     access_token = get_access_token()
     machine_url = f"{base_url}/machine/single"
     
@@ -796,6 +782,22 @@ def machine_data_lazy():
     }, access_token)
     df_all = structure_data(all_data)
     
+    # Apply filters (if any)
+    filters = {
+        "aqi_min": data.get("aqi_min", None),
+        "aqi_max": data.get("aqi_max", None),
+        "humidity_min": data.get("humidity_min", None),
+        "humidity_max": data.get("humidity_max", None),
+        "roomTemperature_min": data.get("roomTemperature_min", None),
+        "roomTemperature_max": data.get("roomTemperature_max", None),
+        "busVoltage_min": data.get("busVoltage_min", None),
+        "busVoltage_max": data.get("busVoltage_max", None),
+        "arrivalDate_min": data.get("arrivalDate_min", None),
+        "arrivalDate_max": data.get("arrivalDate_max", None),
+        "arrivalTime_min": data.get("arrivalTime_min", None),
+        "arrivalTime_max": data.get("arrivalTime_max", None)
+    }
+    
     if filters["arrivalDate_min"]:
         df_all = df_all[df_all["Arrival Date"] >= filters["arrivalDate_min"]]
     if filters["arrivalDate_max"]:
@@ -804,6 +806,7 @@ def machine_data_lazy():
         df_all = df_all[df_all["Arrival Time"] >= filters["arrivalTime_min"]]
     if filters["arrivalTime_max"]:
         df_all = df_all[df_all["Arrival Time"] <= filters["arrivalTime_max"]]
+    
     for col in ["aqi", "humidity", "roomTemperature", "busVoltage"]:
         if col in df_all.columns:
             df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
@@ -823,13 +826,13 @@ def machine_data_lazy():
     total = len(df_all)
     df_page = df_all.iloc[start:start+length]
     data = df_page.to_dict(orient='records')
+    
     return jsonify({
         "draw": draw,
         "recordsTotal": total,
         "recordsFiltered": total,
         "data": data
     })
-
 # ---------------- Dashboard with Graphs ----------------
 @app.route('/dashboard', methods=['GET'])
 def dashboard_graphs():
