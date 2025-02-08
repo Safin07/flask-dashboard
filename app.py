@@ -698,7 +698,7 @@ def data_view():
             lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]],
             ajax: {
               url: "/api/machine_data",
-              type: "GET",
+              type: "POST",
               data: function(d){
                 d.machine_id = machineId;
                 $.each(filterCriteria, function(key, value){
