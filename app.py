@@ -692,24 +692,27 @@ def data_view():
         var filterCriteria = {};
         $(document).ready(function(){
           let machineId = $('#machine_id').val();
-          var table = $('#machineTable').DataTable({
+
+        var table = $('#machineTable').DataTable({
             processing: true,
             serverSide: true,
             searching: false,
-            autoWidth: true,  
+            autoWidth: true,
             lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]],
             ajax: {
-              url: "/api/machine_data",
-              type: "POST",
-              data: function(d){
-                d.machine_id = machineId;
-                $.each(filterCriteria, function(key, value){
-                  d[key] = value;
-                });
-              }
+                url: "/api/machine_data",
+                type: "POST", // Use POST method
+                contentType: "application/json", // Set content type to JSON
+                data: function(d) {
+                    d.machine_id = machineId;
+                    $.each(filterCriteria, function(key, value) {
+                        d[key] = value;
+                    });
+                    return JSON.stringify(d); // Convert data to JSON string
+                }
             },
             columns: machineColumns
-          });
+        });
           // Non-Arrival Filters
           $('#applyNonArrivalFilter').on('click', function(){
             filterCriteria = {
