@@ -700,7 +700,7 @@ def data_view():
             lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]],
             ajax: {
               url: "/api/machine_data",
-              type: "POST",
+              type: "GET",
               data: function(d){
                 d.machine_id = machineId;
                 $.each(filterCriteria, function(key, value){
@@ -756,7 +756,7 @@ def data_view():
          fota_table=fota_table,
          cota_table=cota_table)
 
-@app.route('/api/machine_data', methods=['POST'])
+@app.route('/api/machine_data')
 def machine_data_lazy():
     draw = int(request.args.get('draw', 1))
     start = int(request.args.get('start', 0))
