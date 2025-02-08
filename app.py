@@ -228,6 +228,7 @@ def structure_data(data, include_error_metadata=False):
                 else:
                     structured_row[col] = value
             rows.append(structured_row)
+    logging.info(f"Structured data: {rows}") 
     return pd.DataFrame(rows)
 
 def fetch_data(url, payload, access_token):
@@ -240,6 +241,7 @@ def fetch_data(url, payload, access_token):
             response = requests.post(url, json=payload, headers=local_headers, verify=False)
             response.raise_for_status()
             data = response.json().get("data", {}).get("result", [])
+            logging.info(f"Fetched data from API: {data}")  # Log the fetched data
             if not data:
                 break
             all_records.extend(data)
@@ -760,6 +762,7 @@ def machine_data_lazy():
     start = int(request.args.get('start', 0))
     length = int(request.args.get('length', 10))
     machine_id = request.args.get('machine_id', None)
+    logging.info(f"Filters - arrivalDate_min: {arrival_date_min}, arrivalDate_max: {arrival_date_max}")
     if not machine_id:
         return jsonify({"draw": draw, "recordsTotal": 0, "recordsFiltered": 0, "data": []})
     
