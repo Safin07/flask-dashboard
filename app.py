@@ -32,7 +32,6 @@ headers = {"Content-Type": "application/json"}
 
 # (Truncated) error metadata
 error_metadata = {
-
     1: ("ERR_SYSTEM_BOOT", "Device failed to initialize during power on boot"),
     2: ("ERR_SYSTEM_PANIC", "Device restarted due to Panic error by the controller"),
     3: ("ERR_SYSTEM_INTWDT", "Device restarted due to interrupt watchdog timer by the controller"),
@@ -117,7 +116,7 @@ error_metadata = {
     130: ("ERR_BME_TASK", "Failed to start BME task"),
     140: ("ERR_CMDH_DEVICESTATUS", "Failure in appending device status data to BLE buffer"),
     147: ("ERR_CMDH_MACHINEDATA", "Failure in appending machine data to BLE buffer"),
- 150: ("ERR_CMU_DEVICEINFO", "Failure in reading device information using BLE"),
+    150: ("ERR_CMU_DEVICEINFO", "Failure in reading device information using BLE"),
     160: ("ERR_STM_TASKCREATE", "State machine task creation failed"),
     170: ("ERR_TIMER1_INIT", "Error if Zone scan timer failed to initialize"),
     171: ("ERR_TIMER1_START", "Error if Zone scan timer failed to start"),
@@ -284,9 +283,6 @@ def fetch_device_info_for_machine(machine_id, access_token):
                 latest["fwReleaseDate"] = f"{d} {t}"
             if "manufactureDate" in latest and latest["manufactureDate"]:
                 d, t = convert_to_cest(latest["manufactureDate"] / 1000)
-                    # New code to fetch zoneName for the device
-                # zone_name = get_zone_name(machine_id, access_token)
-
                 latest["manufactureDate"] = f"{d} {t}"
         return pd.DataFrame([latest]) if latest else pd.DataFrame()
     except requests.exceptions.RequestException as e:
@@ -339,8 +335,6 @@ def fetch_cota_history_for_machine(machine_id, access_token):
         logging.error(f"Error fetching COTA history: {e}")
         return pd.DataFrame()
     
-    
-
 # ----- Routes -----
 
 @app.route('/', methods=['GET'])
@@ -599,6 +593,49 @@ def data_view():
                     <input type="number" id="busVoltage_max" name="busVoltage_max" class="form-control">
                   </div>
                 </div>
+                <!-- New filter fields for zone temperature difference -->
+                <hr>
+                <h5>Zone Temperature Difference Filter (Zone Temp - Required Temp)</h5>
+                <div class="row mt-3">
+                  <div class="col-md-6">
+                    <label for="zone1_diff_min" class="form-label">Zone 1 Difference (Min)</label>
+                    <input type="number" id="zone1_diff_min" name="zone1_diff_min" class="form-control">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="zone1_diff_max" class="form-label">Zone 1 Difference (Max)</label>
+                    <input type="number" id="zone1_diff_max" name="zone1_diff_max" class="form-control">
+                  </div>
+                </div>
+                <div class="row mt-3">
+                  <div class="col-md-6">
+                    <label for="zone2_diff_min" class="form-label">Zone 2 Difference (Min)</label>
+                    <input type="number" id="zone2_diff_min" name="zone2_diff_min" class="form-control">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="zone2_diff_max" class="form-label">Zone 2 Difference (Max)</label>
+                    <input type="number" id="zone2_diff_max" name="zone2_diff_max" class="form-control">
+                  </div>
+                </div>
+                <div class="row mt-3">
+                  <div class="col-md-6">
+                    <label for="zone3_diff_min" class="form-label">Zone 3 Difference (Min)</label>
+                    <input type="number" id="zone3_diff_min" name="zone3_diff_min" class="form-control">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="zone3_diff_max" class="form-label">Zone 3 Difference (Max)</label>
+                    <input type="number" id="zone3_diff_max" name="zone3_diff_max" class="form-control">
+                  </div>
+                </div>
+                <div class="row mt-3">
+                  <div class="col-md-6">
+                    <label for="zone4_diff_min" class="form-label">Zone 4 Difference (Min)</label>
+                    <input type="number" id="zone4_diff_min" name="zone4_diff_min" class="form-control">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="zone4_diff_max" class="form-label">Zone 4 Difference (Max)</label>
+                    <input type="number" id="zone4_diff_max" name="zone4_diff_max" class="form-control">
+                  </div>
+                </div>
               </form>
             </div>
             <div class="modal-footer">
@@ -693,7 +730,7 @@ def data_view():
         $(document).ready(function(){
           let machineId = $('#machine_id').val();
 
-        var table = $('#machineTable').DataTable({
+          var table = $('#machineTable').DataTable({
             processing: true,
             serverSide: true,
             searching: false,
@@ -712,7 +749,7 @@ def data_view():
                 }
             },
             columns: machineColumns
-        });
+          });
           // Non-Arrival Filters
           $('#applyNonArrivalFilter').on('click', function(){
             filterCriteria = {
@@ -723,7 +760,15 @@ def data_view():
               roomTemperature_min: $('#roomTemperature_min').val(),
               roomTemperature_max: $('#roomTemperature_max').val(),
               busVoltage_min: $('#busVoltage_min').val(),
-              busVoltage_max: $('#busVoltage_max').val()
+              busVoltage_max: $('#busVoltage_max').val(),
+              zone1_diff_min: $('#zone1_diff_min').val(),
+              zone1_diff_max: $('#zone1_diff_max').val(),
+              zone2_diff_min: $('#zone2_diff_min').val(),
+              zone2_diff_max: $('#zone2_diff_max').val(),
+              zone3_diff_min: $('#zone3_diff_min').val(),
+              zone3_diff_max: $('#zone3_diff_max').val(),
+              zone4_diff_min: $('#zone4_diff_min').val(),
+              zone4_diff_max: $('#zone4_diff_max').val()
             };
             table.ajax.reload();
           });
@@ -785,7 +830,7 @@ def machine_data_lazy():
     }, access_token)
     df_all = structure_data(all_data)
     
-    # Apply filters (if any)
+    # Retrieve filter criteria from request
     filters = {
         "aqi_min": data.get("aqi_min", None),
         "aqi_max": data.get("aqi_max", None),
@@ -798,9 +843,18 @@ def machine_data_lazy():
         "arrivalDate_min": data.get("arrivalDate_min", None),
         "arrivalDate_max": data.get("arrivalDate_max", None),
         "arrivalTime_min": data.get("arrivalTime_min", None),
-        "arrivalTime_max": data.get("arrivalTime_max", None)
+        "arrivalTime_max": data.get("arrivalTime_max", None),
+        "zone1_diff_min": data.get("zone1_diff_min", None),
+        "zone1_diff_max": data.get("zone1_diff_max", None),
+        "zone2_diff_min": data.get("zone2_diff_min", None),
+        "zone2_diff_max": data.get("zone2_diff_max", None),
+        "zone3_diff_min": data.get("zone3_diff_min", None),
+        "zone3_diff_max": data.get("zone3_diff_max", None),
+        "zone4_diff_min": data.get("zone4_diff_min", None),
+        "zone4_diff_max": data.get("zone4_diff_max", None)
     }
     
+    # Apply Arrival Date/Time filters
     if filters["arrivalDate_min"]:
         df_all = df_all[df_all["Arrival Date"] >= filters["arrivalDate_min"]]
     if filters["arrivalDate_max"]:
@@ -810,6 +864,7 @@ def machine_data_lazy():
     if filters["arrivalTime_max"]:
         df_all = df_all[df_all["Arrival Time"] <= filters["arrivalTime_max"]]
     
+    # Apply numeric filters for aqi, humidity, roomTemperature, busVoltage
     for col in ["aqi", "humidity", "roomTemperature", "busVoltage"]:
         if col in df_all.columns:
             df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
@@ -826,16 +881,43 @@ def machine_data_lazy():
                 except:
                     pass
     
+    # Compute the differences between zone temperature and required temperature for each zone
+    for zone in [1, 2, 3, 4]:
+        temp_col = f"ZoneTemperature4_item{zone}"
+        req_col = f"requiredTemperature_item{zone}"
+        diff_col = f"zone{zone}_diff"
+        if temp_col in df_all.columns and req_col in df_all.columns:
+            df_all[diff_col] = pd.to_numeric(df_all[temp_col], errors='coerce') - pd.to_numeric(df_all[req_col], errors='coerce')
+    
+    # Apply filters for the computed zone differences
+    for zone in [1, 2, 3, 4]:
+        diff_col = f"zone{zone}_diff"
+        min_filter = filters.get(f"zone{zone}_diff_min")
+        max_filter = filters.get(f"zone{zone}_diff_max")
+        if min_filter:
+            try:
+                min_val = float(min_filter)
+                df_all = df_all[df_all[diff_col] >= min_val]
+            except:
+                pass
+        if max_filter:
+            try:
+                max_val = float(max_filter)
+                df_all = df_all[df_all[diff_col] <= max_val]
+            except:
+                pass
+
     total = len(df_all)
     df_page = df_all.iloc[start:start+length]
-    data = df_page.to_dict(orient='records')
+    data_records = df_page.to_dict(orient='records')
     
     return jsonify({
         "draw": draw,
         "recordsTotal": total,
         "recordsFiltered": total,
-        "data": data
+        "data": data_records
     })
+
 # ---------------- Dashboard with Graphs ----------------
 @app.route('/dashboard', methods=['GET'])
 def dashboard_graphs():
@@ -872,11 +954,9 @@ def dashboard_graphs():
     if end_time:
         df = df[df["Device local Time"] <= end_time]
     # Common x-axis.
-    # x_values = df["Device local Time"].tolist()
     x_values = df["Device local Time"].tolist()[::-1]
     
     # Zone 1
-    # zone1_temp = df["ZoneTemperature4_item1"].tolist() if "ZoneTemperature4_item1" in df.columns else []
     zone1_temp = df["ZoneTemperature4_item1"].tolist()[::-1] if "ZoneTemperature4_item1" in df.columns else []
     zone1_req  = df["requiredTemperature_item1"].tolist()[::-1] if "requiredTemperature_item1" in df.columns else []
     zone1_heater = df["heaterCurrent_item1"].tolist()[::-1] if "heaterCurrent_item1" in df.columns else []
@@ -892,7 +972,6 @@ def dashboard_graphs():
         zone1_ymin, zone1_ymax = 0, 100
 
     # Zone 2
-
     zone2_temp = df["ZoneTemperature4_item2"].tolist()[::-1] if "ZoneTemperature4_item2" in df.columns else []
     zone2_req  = df["requiredTemperature_item2"].tolist()[::-1] if "requiredTemperature_item2" in df.columns else []
     zone2_heater = df["heaterCurrent_item2"].tolist()[::-1] if "heaterCurrent_item2" in df.columns else []
@@ -923,12 +1002,10 @@ def dashboard_graphs():
         zone3_ymin, zone3_ymax = 0, 100
 
     # Zone 4
-  # Zone 4 (modified to convert to numeric and compute min/max robustly)
     zone4_temp = df["ZoneTemperature4_item4"].tolist()[::-1] if "ZoneTemperature4_item4" in df.columns else []
     zone4_req  = df["requiredTemperature_item4"].tolist()[::-1] if "requiredTemperature_item4" in df.columns else []
     zone4_heater = df["heaterCurrent_item4"].tolist()[::-1] if "heaterCurrent_item4" in df.columns else []
     try:
-        # Convert the series to numeric and drop any non-numeric values
         zone4_req_series = pd.to_numeric(df["requiredTemperature_item4"], errors='coerce').dropna()
         zone4_temp_series = pd.to_numeric(df["ZoneTemperature4_item4"], errors='coerce').dropna()
         if not zone4_req_series.empty and not zone4_temp_series.empty:
@@ -940,7 +1017,6 @@ def dashboard_graphs():
         zone4_ymin, zone4_ymax = 0, 100
 
     # Other graphs.
-    # person_in_bed = df["timeInBedStatus"].tolist() if "timeInBedStatus" in df.columns else []
     person_in_bed = df["timeInBedSensor"].tolist() if "timeInBedSensor" in df.columns else []
     bus_voltage    = df["busVoltage"].tolist() if "busVoltage" in df.columns else []
     aqi_data       = df["aqi"].tolist() if "aqi" in df.columns else []
