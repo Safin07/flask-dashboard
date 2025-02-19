@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Edit Invoice Details</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+      /* Optional: additional custom styling */
+      table, th, td { border: 1px solid #ccc; }
+      th, td { padding: 0.5rem; }
+    </style>
+  </head>
+  <body class="bg-light">
+    <div class="container mt-5">
+      <h1 class="mb-4">Edit Invoice Details for {{ record.organization }}</h1>
+      <form action="{{ url_for('create_invoice_route') }}" method="post">
+        <table class="table table-bordered">
+          <thead class="thead-light">
+            <tr>
+              <th>Field</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Organization</td>
+              <td><input type="text" name="organization" value="{{ record.organization }}" class="form-control" readonly></td>
+            </tr>
+            <tr>
+              <td>Name</td>
+              <td><input type="text" name="name" value="{{ record.name }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Job Title</td>
+              <td><input type="text" name="job_title" value="{{ record.job_title }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Email</td>
+              <td><input type="text" name="email" value="{{ record.email }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Invoice Email</td>
+              <td><input type="text" name="invoice_email" value="{{ record.invoice_email }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Phone</td>
+              <td><input type="text" name="phone" value="{{ record.phone }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Address 1</td>
+              <td><input type="text" name="address1" value="{{ record.address1 }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Address 2</td>
+              <td><input type="text" name="address2" value="{{ record.address2 }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Address 3</td>
+              <td><input type="text" name="address3" value="{{ record.address3 }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Locality</td>
+              <td><input type="text" name="locality" value="{{ record.locality }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>City</td>
+              <td><input type="text" name="city" value="{{ record.city }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Postal Code</td>
+              <td><input type="text" name="postal_code" value="{{ record.postal_code }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>State</td>
+              <td><input type="text" name="state" value="{{ record.state }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Shipping Address</td>
+              <td><input type="text" name="shipping_address" value="{{ record.shipping_address }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Commercial Invoice</td>
+              <td><input type="text" name="commercial_invoice" value="{{ record.commercial_invoice }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Customer PO</td>
+              <td><input type="text" name="customer_po" value="{{ record.customer_po }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Customer ID</td>
+              <td><input type="text" name="customer_id" value="{{ record.customer_id }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Date</td>
+              <td><input type="text" name="date" value="{{ record.date }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Vendor ID</td>
+              <td><input type="text" name="vendor_id" value="{{ record.vendor_id }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Position</td>
+              <td><input type="text" name="position" value="{{ record.position }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Quantity</td>
+              <td><input type="text" name="quantity" value="{{ record.quantity }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Price/Unit</td>
+              <td><input type="text" name="price_unit" value="{{ record.price_unit }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Sum</td>
+              <td><input type="text" name="sum" value="{{ record.sum }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Estimated Shipping Date</td>
+              <td><input type="text" name="estimated_shipping_date" value="{{ record.estimated_shipping_date }}" class="form-control"></td>
+            </tr>
+            <tr>
+              <td>Packaging</td>
+              <td><input type="text" name="packaging" value="{{ record.packaging }}" class="form-control"></td>
+            </tr>
+          </tbody>
+        </table>
+        <button type="submit" class="btn btn-primary">Create Invoice</button>
+      </form>
+    </div>
+  </body>
+</html>
