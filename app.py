@@ -174,7 +174,7 @@ error_metadata = {
 
 def get_access_token():
     try:
-        response = requests.post(sign_in_url, json=sign_in_payload, headers=headers, verify=False)
+        response = requests.post(sign_in_url, json=sign_in_payload, headers=headers, verify=False, timeout=30)
         response.raise_for_status()
         if response.status_code == 200:
             return response.json().get("accessToken")
