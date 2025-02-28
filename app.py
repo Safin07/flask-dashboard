@@ -237,7 +237,7 @@ def fetch_data(url, payload, access_token):
         payload['page'] = page
         local_headers = {"Content-Type": "application/json", "x-access-token": access_token}
         try:
-            response = requests.post(url, json=payload, headers=local_headers, verify=False,  timeout=30)
+            response = requests.post(url, json=payload, headers=local_headers, verify=False)
             response.raise_for_status()
             data = response.json().get("data", {}).get("result", [])
             logging.info(f"Fetched data from API: {data}")  # Log the fetched data
@@ -803,22 +803,19 @@ def data_view():
          device_table=device_table,
          fota_table=fota_table,
          cota_table=cota_table)
-@app.route('/api/machine_data', methods=['GET', 'POST'])
-def machine_data_lazy():
-    # Support both GET and POST requests
-    if request.method == 'GET':
-        data = request.args.to_dict()
-    else:
-        data = request.get_json() or {}
 
+@app.route('/api/machine_data', methods=['POST'])  # Allow POST requests
+def machine_data_lazy():
+    data = request.get_json()  # Get data from the POST request body
     draw = data.get('draw', 1)
-    start = int(data.get('start', 0))
-    length = int(data.get('length', 10))
+    start = data.get('start', 0)
+    length = data.get('length', 10)
     machine_id = data.get('machine_id', None)
     
     if not machine_id:
         return jsonify({"draw": draw, "recordsTotal": 0, "recordsFiltered": 0, "data": []})
     
+    # Fetch data and apply filters
     access_token = get_access_token()
     machine_url = f"{base_url}/machine/single"
     
