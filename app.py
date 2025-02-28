@@ -174,7 +174,7 @@ error_metadata = {
 
 def get_access_token():
     try:
-        response = requests.post(sign_in_url, json=sign_in_payload, headers=headers, verify=False, timeout=30)
+        response = requests.post(sign_in_url, json=sign_in_payload, headers=headers, verify=False)
         response.raise_for_status()
         if response.status_code == 200:
             return response.json().get("accessToken")
@@ -237,7 +237,7 @@ def fetch_data(url, payload, access_token):
         payload['page'] = page
         local_headers = {"Content-Type": "application/json", "x-access-token": access_token}
         try:
-            response = requests.post(url, json=payload, headers=local_headers, verify=False)
+            response = requests.post(url, json=payload, headers=local_headers, verify=False,  timeout=30)
             response.raise_for_status()
             data = response.json().get("data", {}).get("result", [])
             logging.info(f"Fetched data from API: {data}")  # Log the fetched data
@@ -803,7 +803,6 @@ def data_view():
          device_table=device_table,
          fota_table=fota_table,
          cota_table=cota_table)
-
 @app.route('/api/machine_data', methods=['GET', 'POST'])
 def machine_data_lazy():
     # Support both GET and POST requests
