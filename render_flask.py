@@ -15,7 +15,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Update LOGO_PATH as needed
-LOGO_PATH = "logo3.png"
+LOGO_PATH = "/Users/safinchowdhury/Documents/logo3.png"
 
 app.secret_key = "some_secret_key_for_session"
 
@@ -60,14 +60,23 @@ def convert_to_cest(timestamp):
     """
     Converts a given timestamp to Central European Summer Time (CET/CEST) format.
     If the timestamp is in milliseconds (i.e. > 1e10), it divides by 1000.
+    If the timestamp is None or not a valid number, returns empty strings.
     """
-    # Check if timestamp is in milliseconds; if so, convert it to seconds.
-    if timestamp > 1e10:
-        timestamp = timestamp / 1000.0
-    utc_time = datetime.utcfromtimestamp(timestamp)
-    cest = pytz.timezone('Europe/Berlin')
-    cest_time = pytz.utc.localize(utc_time).astimezone(cest)
-    return cest_time.strftime('%Y-%m-%d'), cest_time.strftime('%H:%M')
+    try:
+        if timestamp is None:
+            return "", ""
+        # Ensure timestamp is a float or int
+        ts = float(timestamp)
+        # Check if timestamp is in milliseconds; if so, convert to seconds.
+        if ts > 1e10:
+            ts = ts / 1000.0
+        utc_time = datetime.utcfromtimestamp(ts)
+        cest = pytz.timezone('Europe/Berlin')
+        cest_time = pytz.utc.localize(utc_time).astimezone(cest)
+        return cest_time.strftime('%Y-%m-%d'), cest_time.strftime('%H:%M')
+    except Exception as e:
+        logging.error("Error converting timestamp %s: %s", timestamp, e)
+        return "", ""
 
 def structure_data(data, include_error_metadata=False):
     rows = []
@@ -75,6 +84,11 @@ def structure_data(data, include_error_metadata=False):
         if isinstance(row, dict):
             structured_row = {}
             for col, value in row.items():
+                # If the value is None, simply pass it along
+                if value is None:
+                    structured_row[col] = None
+                    continue
+
                 if col == 'timeStamp':
                     date_str, time_str = convert_to_cest(value)
                     structured_row['Device local Date'] = date_str
@@ -97,6 +111,7 @@ def structure_data(data, include_error_metadata=False):
                     structured_row['Error Name'] = err_name
                     structured_row['Description'] = err_desc
                 elif isinstance(value, list):
+                    # Process list values (for example: ZoneTemperature4, requiredTemperature, heaterCurrent)
                     for idx, item in enumerate(value):
                         structured_row[f"{col}_item{idx+1}"] = item
                 elif isinstance(value, dict):
@@ -105,7 +120,7 @@ def structure_data(data, include_error_metadata=False):
                 else:
                     structured_row[col] = value
             rows.append(structured_row)
-    logging.info(f"Structured data: {rows}")
+    logging.info("Structured data: %s", rows)
     return pd.DataFrame(rows)
 
 def df_to_records(df):
@@ -113,7 +128,6 @@ def df_to_records(df):
     Replace NaN values with None and convert numpy scalar types to native Python types.
     """
     df = df.where(pd.notnull(df), None)
-    # Use applymap to convert numpy scalars to native types
     return df.applymap(lambda x: x.item() if hasattr(x, 'item') else x).to_dict(orient='records')
 
 def fetch_data(url, payload, access_token):
@@ -126,13 +140,13 @@ def fetch_data(url, payload, access_token):
             response = requests.post(url, json=payload, headers=local_headers, verify=False, timeout=30)
             response.raise_for_status()
             data = response.json().get("data", {}).get("result", [])
-            logging.info(f"Fetched data from API: {data}")
+            logging.info("Fetched data from API (page %s): %s", page, data)
             if not data:
                 break
             all_records.extend(data)
             page += 1
         except requests.exceptions.RequestException as e:
-            logging.error(f"Error fetching data: {e}")
+            logging.error("Error fetching data: %s", e)
             break
     return all_records
 
@@ -154,7 +168,6 @@ def fetch_device_info_for_machine(machine_id, access_token):
         if not latest:
             latest = max(data, key=lambda x: x.get("Id", 0))
         if latest:
-            # Let convert_to_cest handle the unit (seconds vs. milliseconds)
             if "fwReleaseDate" in latest and latest["fwReleaseDate"]:
                 d, t = convert_to_cest(latest["fwReleaseDate"])
                 latest["fwReleaseDate"] = f"{d} {t}"
@@ -163,7 +176,7 @@ def fetch_device_info_for_machine(machine_id, access_token):
                 latest["manufactureDate"] = f"{d} {t}"
         return pd.DataFrame([latest]) if latest else pd.DataFrame()
     except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching device info: {e}")
+        logging.error("Error fetching device info: %s", e)
         return pd.DataFrame()
 
 def fetch_fota_history_for_machine(machine_id, access_token):
@@ -186,7 +199,7 @@ def fetch_fota_history_for_machine(machine_id, access_token):
         filtered = [r for r in fota_data if r.get("machineId") == machine_id]
         return pd.DataFrame(filtered) if filtered else pd.DataFrame()
     except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching FOTA history: {e}")
+        logging.error("Error fetching FOTA history: %s", e)
         return pd.DataFrame()
 
 def fetch_cota_history_for_machine(machine_id, access_token):
@@ -209,7 +222,7 @@ def fetch_cota_history_for_machine(machine_id, access_token):
         filtered = [r for r in cota_data if r.get("machineId") == machine_id]
         return pd.DataFrame(filtered) if filtered else pd.DataFrame()
     except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching COTA history: {e}")
+        logging.error("Error fetching COTA history: %s", e)
         return pd.DataFrame()
 
 # ----- Routes -----
@@ -262,7 +275,6 @@ def data_view():
     if not access_token:
         return "Error obtaining access token.", 503
 
-    # Fetch full tables for inactive data, error logs, device info, FOTA and COTA histories.
     inactive_payload = {
         "machineId": machine_id,
         "nFilter": {},
@@ -376,7 +388,6 @@ def data_view():
           {{ cota_df.to_html(classes='table table-striped table-bordered', index=False) | safe }}
         </div>
       </div>
-      <!-- (Modal HTML for filters omitted for brevity) -->
       <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
       <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
       <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -440,7 +451,6 @@ def data_view():
             },
             columns: machineColumns
           });
-          // (Attach filter event handlers as needed)
         });
       </script>
     </body>
@@ -499,7 +509,6 @@ def machine_data_lazy():
         "zone4_diff_min": data.get("zone4_diff_min", None),
         "zone4_diff_max": data.get("zone4_diff_max", None)
     }
-    # Apply arrival date/time filters
     if filters["arrivalDate_min"]:
         df_all = df_all[df_all["Arrival Date"] >= filters["arrivalDate_min"]]
     if filters["arrivalDate_max"]:
@@ -508,7 +517,6 @@ def machine_data_lazy():
         df_all = df_all[df_all["Arrival Time"] >= filters["arrivalTime_min"]]
     if filters["arrivalTime_max"]:
         df_all = df_all[df_all["Arrival Time"] <= filters["arrivalTime_max"]]
-    # Apply numeric filters
     for col in ["aqi", "humidity", "roomTemperature", "busVoltage"]:
         if col in df_all.columns:
             df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
@@ -524,14 +532,12 @@ def machine_data_lazy():
                     df_all = df_all[df_all[col] <= max_val]
                 except Exception:
                     pass
-    # Compute differences for zone temperatures
     for zone in [1, 2, 3, 4]:
         temp_col = f"ZoneTemperature4_item{zone}"
         req_col = f"requiredTemperature_item{zone}"
         diff_col = f"zone{zone}_diff"
         if temp_col in df_all.columns and req_col in df_all.columns:
             df_all[diff_col] = pd.to_numeric(df_all[temp_col], errors='coerce') - pd.to_numeric(df_all[req_col], errors='coerce')
-    # Apply zone difference filters
     for zone in [1, 2, 3, 4]:
         diff_col = f"zone{zone}_diff"
         if filters.get(f"zone{zone}_diff_min"):
@@ -548,7 +554,6 @@ def machine_data_lazy():
                 pass
     total = len(df_all)
     df_page = df_all.iloc[start:start+length]
-    # Convert the dataframe to a list of dicts with native types
     data_records = df_to_records(df_page)
     return jsonify({
         "draw": draw,
@@ -589,7 +594,6 @@ def dashboard_graphs():
         df = df[df["Device local Time"] <= end_time]
     x_values = df["Device local Time"].tolist()[::-1]
 
-    # Helper to get zone chart data
     def get_zone_data(zone):
         temp = df.get(f"ZoneTemperature4_item{zone}", pd.Series([])).tolist()[::-1]
         req = df.get(f"requiredTemperature_item{zone}", pd.Series([])).tolist()[::-1]
