@@ -15,7 +15,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Update LOGO_PATH as needed
-LOGO_PATH = "logo3.png"
+LOGO_PATH = "/Users/safinchowdhury/Documents/logo3.png"
 
 app.secret_key = "some_secret_key_for_session"
 
@@ -39,6 +39,7 @@ error_metadata = {
     3: ("ERR_SYSTEM_INTWDT", "Device restarted due to interrupt watchdog timer by the controller"),
     4: ("ERR_SYSTEM_TASKWDT", "Device restarted due to task watchdog timer by the controller"),
     5: ("ERR_SYSTEM_BROWNOUT", "Device restarted due to supply voltage below brownout threshold level"),
+    # ... (other error codes) ...
     234: ("ERR_WIFI_TASKCREATE", "WiFi Task creation failed")
 }
 
@@ -90,6 +91,7 @@ def structure_data(data, include_error_metadata=False):
                     structured_row['Description'] = err_desc
                 elif isinstance(value, list):
                     for idx, item in enumerate(value):
+                        # For array columns (e.g. ZoneTemperature4), add an itemized column name.
                         structured_row[f"{col}_item{idx+1}"] = item
                 elif isinstance(value, dict):
                     for sub_key, sub_val in value.items():
@@ -101,6 +103,9 @@ def structure_data(data, include_error_metadata=False):
     return pd.DataFrame(rows)
 
 def df_to_records(df):
+    """
+    Replace NaN values with None and convert numpy scalar types to native Python types.
+    """
     df = df.where(pd.notnull(df), None)
     return df.applymap(lambda x: x.item() if hasattr(x, 'item') else x).to_dict(orient='records')
 
@@ -126,82 +131,8 @@ def fetch_data(url, payload, access_token, max_pages=None):
             break
     return all_records
 
-def fetch_device_info_for_machine(machine_id, access_token):
-    url = f"{base_url}/machine/singleMachineDetails"
-    local_headers = {"Content-Type": "application/json", "x-access-token": access_token}
-    try:
-        payload = {"machineId": machine_id}
-        resp = requests.post(url, json=payload, headers=local_headers, verify=False, timeout=30)
-        resp.raise_for_status()
-        data = resp.json().get("data", {}).get("result", [])
-        if not data:
-            return pd.DataFrame()
-        latest = None
-        for rec in data:
-            if rec.get("isLatest", False):
-                latest = rec
-                break
-        if not latest:
-            latest = max(data, key=lambda x: x.get("Id", 0))
-        if latest:
-            if "fwReleaseDate" in latest and latest["fwReleaseDate"]:
-                d, t = convert_to_cest(latest["fwReleaseDate"] / 1000)
-                latest["fwReleaseDate"] = f"{d} {t}"
-            if "manufactureDate" in latest and latest["manufactureDate"]:
-                d, t = convert_to_cest(latest["manufactureDate"] / 1000)
-                latest["manufactureDate"] = f"{d} {t}"
-        return pd.DataFrame([latest]) if latest else pd.DataFrame()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching device info: {e}")
-        return pd.DataFrame()
+# ----- Routes -----
 
-def fetch_fota_history_for_machine(machine_id, access_token):
-    url = f"{base_url}/fota/history"
-    payload = {
-        "page": 1,
-        "limit": 3000,
-        "status": ["Completed", "Pending", "Cancelled"],
-        "sortBy": "DESC",
-        "sortValue": "releasedId",
-        "machineId": machine_id
-    }
-    local_headers = {"Content-Type": "application/json", "x-access-token": access_token}
-    try:
-        resp = requests.post(url, json=payload, headers=local_headers, verify=False, timeout=30)
-        resp.raise_for_status()
-        fota_data = resp.json().get("data", [])
-        if 'result' in fota_data:
-            fota_data = fota_data['result']
-        filtered = [r for r in fota_data if r.get("machineId") == machine_id]
-        return pd.DataFrame(filtered) if filtered else pd.DataFrame()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching FOTA history: {e}")
-        return pd.DataFrame()
-
-def fetch_cota_history_for_machine(machine_id, access_token):
-    url = f"{base_url}/device/cotaHistory"
-    payload = {
-        "page": 1,
-        "limit": 3000,
-        "status": ["Completed", "Pending", "Cancelled"],
-        "sortBy": "DESC",
-        "sortValue": "releasedId",
-        "machineId": machine_id
-    }
-    local_headers = {"Content-Type": "application/json", "x-access-token": access_token}
-    try:
-        resp = requests.post(url, json=payload, headers=local_headers, verify=False, timeout=30)
-        resp.raise_for_status()
-        cota_data = resp.json().get("data", [])
-        if 'result' in cota_data:
-            cota_data = cota_data['result']
-        filtered = [r for r in cota_data if r.get("machineId") == machine_id]
-        return pd.DataFrame(filtered) if filtered else pd.DataFrame()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching COTA history: {e}")
-        return pd.DataFrame()
-
-# Home page
 @app.route('/', methods=['GET'])
 def home():
     with open(LOGO_PATH, "rb") as f:
@@ -243,92 +174,20 @@ def home():
     </html>
     ''', logo_base64=logo_base64)
 
-# Data View Route
-@app.route('/data', methods=['GET'])
-def data_view():
-    machine_id = request.args.get('machine_id')
-    access_token = get_access_token()
-    if not access_token:
-        return "Error obtaining access token.", 503
-
-    inactive_payload = {
-        "machineId": machine_id,
-        "nFilter": {},
-        "sortBy": "DESC",
-        "sortValue": "timeStamp",
-        "download": 0,
-        "fields": [],
-        "limit": 100
-    }
-    inactive_df = structure_data(fetch_data(f"{base_url}/machineInactive/singleMachineInactiveData", inactive_payload, access_token))
-    error_payload = {
-        "machineId": machine_id,
-        "nFilter": {},
-        "sortBy": "DESC",
-        "sortValue": "arrivalTime",
-        "download": 0,
-        "fields": ["machineId", "arrivalTime", "zoneValue", "error", "logCounter"],
-        "limit": 100
-    }
-    error_df = structure_data(fetch_data(f"{base_url}/machine/singleErrorData", error_payload, access_token), include_error_metadata=True)
-    device_df = fetch_device_info_for_machine(machine_id, access_token)
-    fota_df = fetch_fota_history_for_machine(machine_id, access_token)
-    cota_df = fetch_cota_history_for_machine(machine_id, access_token)
-
-    return render_template_string('''
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <title>Machine Data View</title>
-      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    </head>
-    <body>
-      <nav class="navbar navbar-dark bg-primary">
-        <div class="container">
-          <a class="navbar-brand" href="/">Machine Data Dashboard</a>
-        </div>
-      </nav>
-      <div class="container mt-4">
-        <h2>Machine Data Report: {{ machine_id }}</h2>
-        <div class="table-responsive">
-          <h4>Inactive Data</h4>
-          {{ inactive_df.to_html(classes='table table-striped table-bordered', index=False) | safe }}
-        </div>
-        <div class="table-responsive">
-          <h4>Error Logs</h4>
-          {{ error_df.to_html(classes='table table-striped table-bordered', index=False) | safe }}
-        </div>
-        <div class="table-responsive">
-          <h4>Device Information</h4>
-          {{ device_df.to_html(classes='table table-striped table-bordered', index=False) | safe }}
-        </div>
-        <div class="table-responsive">
-          <h4>FOTA History</h4>
-          {{ fota_df.to_html(classes='table table-striped table-bordered', index=False) | safe }}
-        </div>
-        <div class="table-responsive">
-          <h4>COTA History</h4>
-          {{ cota_df.to_html(classes='table table-striped table-bordered', index=False) | safe }}
-        </div>
-      </div>
-      <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    </body>
-    </html>
-    ''', machine_id=machine_id, inactive_df=inactive_df, error_df=error_df, device_df=device_df, fota_df=fota_df, cota_df=cota_df)
-
-# Dashboard (Graphs) Route
 @app.route('/dashboard', methods=['GET'])
 def dashboard_graphs():
     machine_id = request.args.get('machine_id')
     if not machine_id:
         return "Machine ID not provided", 400
 
+    # (Optional) GET parameters for time filtering can be used for table views,
+    # but for graphs we will always show data for the last active day.
     access_token = get_access_token()
     if not access_token:
         return "Failed to obtain access token", 503
 
     try:
+        # Fetch data (limit to 50 pages) and structure it.
         all_data = fetch_data(
             f"{base_url}/machine/single",
             {
@@ -344,32 +203,22 @@ def dashboard_graphs():
             max_pages=50
         )
         df = structure_data(all_data)
-        if df.empty:
-            return "No data available for the given machine.", 404
 
-        # Determine the last active day (default for dashboard graphs)
-        last_active_day = df["Device local Date"].max() if "Device local Date" in df.columns else None
+        # *** Filter for only the last active day ***
+        if "Device local Date" in df.columns and not df.empty:
+            last_active_day = df["Device local Date"].max()
+            logging.info(f"Last active day for machine {machine_id}: {last_active_day}")
+            df = df[df["Device local Date"] == last_active_day]
+        else:
+            df = pd.DataFrame()  # no data available
 
-        # Get filter parameters (if provided, otherwise default to last active day)
-        start_date = request.args.get('start_date', last_active_day)
-        end_date = request.args.get('end_date', last_active_day)
-        start_time = request.args.get('start_time', '')
-        end_time = request.args.get('end_time', '')
-
-        if start_date:
-            df = df[df["Device local Date"] >= start_date]
-        if end_date:
-            df = df[df["Device local Date"] <= end_date]
-        if start_time:
-            df = df[df["Device local Time"] >= start_time]
-        if end_time:
-            df = df[df["Device local Time"] <= end_time]
-
-        x_values = df["Device local Time"].tolist()[::-1] if "Device local Time" in df.columns else []
+        # For the graphs, we use the filtered data for the last active day.
+        x_values = df["Device local Time"].tolist()[::-1] if "Device local Time" in df.columns and not df.empty else []
     except Exception as e:
         logging.error("Error in dashboard data processing: %s", e)
         return "Error processing dashboard data", 500
 
+    # Helper function to extract zone data.
     def get_zone_data(zone):
         temp = df.get(f"ZoneTemperature4_item{zone}", pd.Series([])).tolist()[::-1]
         req = df.get(f"requiredTemperature_item{zone}", pd.Series([])).tolist()[::-1]
@@ -410,39 +259,7 @@ def dashboard_graphs():
     <body>
       <div class="container mt-4">
          <h1>Dashboard for Machine {{ machine_id }}</h1>
-         <form method="get" action="/dashboard" class="row g-3 mb-4">
-           <input type="hidden" name="machine_id" value="{{ machine_id }}">
-           <div class="col-auto">
-             <label for="start_date" class="col-form-label">Start Date</label>
-           </div>
-           <div class="col-auto">
-             <input type="date" id="start_date" name="start_date" class="form-control" value="{{ request.args.get('start_date', last_active_day) }}">
-           </div>
-           <div class="col-auto">
-             <label for="end_date" class="col-form-label">End Date</label>
-           </div>
-           <div class="col-auto">
-             <input type="date" id="end_date" name="end_date" class="form-control" value="{{ request.args.get('end_date', last_active_day) }}">
-           </div>
-           <div class="col-auto">
-             <label for="start_time" class="col-form-label">Start Time</label>
-           </div>
-           <div class="col-auto">
-             <input type="time" id="start_time" name="start_time" class="form-control" value="{{ request.args.get('start_time', '') }}">
-           </div>
-           <div class="col-auto">
-             <label for="end_time" class="col-form-label">End Time</label>
-           </div>
-           <div class="col-auto">
-             <input type="time" id="end_time" name="end_time" class="form-control" value="{{ request.args.get('end_time', '') }}">
-           </div>
-           <div class="col-auto">
-             <button type="submit" class="btn btn-primary">Apply Date Filter</button>
-           </div>
-         </form>
-         <div class="mb-4">
-           <a href="/data?machine_id={{ machine_id }}" class="btn btn-secondary">Back to Data View</a>
-         </div>
+         <div class="mb-4"><a href="/data?machine_id={{ machine_id }}" class="btn btn-secondary">Back to Data View</a></div>
          <h3>Zone 1</h3><canvas id="chartZone1"></canvas>
          <h3>Zone 2</h3><canvas id="chartZone2"></canvas>
          <h3>Zone 3</h3><canvas id="chartZone3"></canvas>
@@ -501,7 +318,6 @@ def dashboard_graphs():
     </html>
     ''',
     machine_id=machine_id,
-    last_active_day=last_active_day,
     x_values=x_values,
     zone1_temp=zone1_temp, zone1_req=zone1_req, zone1_heater=zone1_heater, zone1_ymin=zone1_ymin, zone1_ymax=zone1_ymax,
     zone2_temp=zone2_temp, zone2_req=zone2_req, zone2_heater=zone2_heater, zone2_ymin=zone2_ymin, zone2_ymax=zone2_ymax,
