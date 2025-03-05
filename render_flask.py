@@ -15,7 +15,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Update LOGO_PATH as needed
-LOGO_PATH = "/Users/safinchowdhury/Documents/logo3.png"
+LOGO_PATH = "logo3.png"
 
 app.secret_key = "some_secret_key_for_session"
 
@@ -180,8 +180,6 @@ def dashboard_graphs():
     if not machine_id:
         return "Machine ID not provided", 400
 
-    # (Optional) GET parameters for time filtering can be used for table views,
-    # but for graphs we will always show data for the last active day.
     access_token = get_access_token()
     if not access_token:
         return "Failed to obtain access token", 503
@@ -203,22 +201,41 @@ def dashboard_graphs():
             max_pages=50
         )
         df = structure_data(all_data)
+        if df.empty:
+            return "No data available for the given machine.", 404
 
-        # *** Filter for only the last active day ***
-        if "Device local Date" in df.columns and not df.empty:
+        # Determine the last active day from the data
+        if "Device local Date" in df.columns:
             last_active_day = df["Device local Date"].max()
-            logging.info(f"Last active day for machine {machine_id}: {last_active_day}")
-            df = df[df["Device local Date"] == last_active_day]
         else:
-            df = pd.DataFrame()  # no data available
+            last_active_day = None
 
-        # For the graphs, we use the filtered data for the last active day.
-        x_values = df["Device local Time"].tolist()[::-1] if "Device local Time" in df.columns and not df.empty else []
+        # Get filter parameters from query string.
+        # If no date filter is provided, default to the last active day.
+        start_date = request.args.get('start_date', last_active_day)
+        end_date = request.args.get('end_date', last_active_day)
+        start_time = request.args.get('start_time', '')
+        end_time = request.args.get('end_time', '')
+
+        # Apply date filters
+        if start_date:
+            df = df[df["Device local Date"] >= start_date]
+        if end_date:
+            df = df[df["Device local Date"] <= end_date]
+
+        # Apply time filters if provided
+        if start_time:
+            df = df[df["Device local Time"] >= start_time]
+        if end_time:
+            df = df[df["Device local Time"] <= end_time]
+
+        # For graphing, use the (filtered) data.
+        x_values = df["Device local Time"].tolist()[::-1] if "Device local Time" in df.columns else []
     except Exception as e:
         logging.error("Error in dashboard data processing: %s", e)
         return "Error processing dashboard data", 500
 
-    # Helper function to extract zone data.
+    # Helper to extract zone data.
     def get_zone_data(zone):
         temp = df.get(f"ZoneTemperature4_item{zone}", pd.Series([])).tolist()[::-1]
         req = df.get(f"requiredTemperature_item{zone}", pd.Series([])).tolist()[::-1]
@@ -259,7 +276,39 @@ def dashboard_graphs():
     <body>
       <div class="container mt-4">
          <h1>Dashboard for Machine {{ machine_id }}</h1>
-         <div class="mb-4"><a href="/data?machine_id={{ machine_id }}" class="btn btn-secondary">Back to Data View</a></div>
+         <form method="get" action="/dashboard" class="row g-3 mb-4">
+           <input type="hidden" name="machine_id" value="{{ machine_id }}">
+           <div class="col-auto">
+             <label for="start_date" class="col-form-label">Start Date</label>
+           </div>
+           <div class="col-auto">
+             <input type="date" id="start_date" name="start_date" class="form-control" value="{{ request.args.get('start_date', last_active_day) }}">
+           </div>
+           <div class="col-auto">
+             <label for="end_date" class="col-form-label">End Date</label>
+           </div>
+           <div class="col-auto">
+             <input type="date" id="end_date" name="end_date" class="form-control" value="{{ request.args.get('end_date', last_active_day) }}">
+           </div>
+           <div class="col-auto">
+             <label for="start_time" class="col-form-label">Start Time</label>
+           </div>
+           <div class="col-auto">
+             <input type="time" id="start_time" name="start_time" class="form-control" value="{{ request.args.get('start_time', '') }}">
+           </div>
+           <div class="col-auto">
+             <label for="end_time" class="col-form-label">End Time</label>
+           </div>
+           <div class="col-auto">
+             <input type="time" id="end_time" name="end_time" class="form-control" value="{{ request.args.get('end_time', '') }}">
+           </div>
+           <div class="col-auto">
+             <button type="submit" class="btn btn-primary">Apply Date Filter</button>
+           </div>
+         </form>
+         <div class="mb-4">
+           <a href="/data?machine_id={{ machine_id }}" class="btn btn-secondary">Back to Data View</a>
+         </div>
          <h3>Zone 1</h3><canvas id="chartZone1"></canvas>
          <h3>Zone 2</h3><canvas id="chartZone2"></canvas>
          <h3>Zone 3</h3><canvas id="chartZone3"></canvas>
@@ -318,6 +367,7 @@ def dashboard_graphs():
     </html>
     ''',
     machine_id=machine_id,
+    last_active_day=last_active_day,
     x_values=x_values,
     zone1_temp=zone1_temp, zone1_req=zone1_req, zone1_heater=zone1_heater, zone1_ymin=zone1_ymin, zone1_ymax=zone1_ymax,
     zone2_temp=zone2_temp, zone2_req=zone2_req, zone2_heater=zone2_heater, zone2_ymin=zone2_ymin, zone2_ymax=zone2_ymax,
