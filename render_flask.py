@@ -7,6 +7,7 @@ import pytz
 import base64
 from flask_cors import CORS
 import urllib3
+import os
 
 # Disable insecure HTTPS warnings (for development only)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -58,17 +59,14 @@ def get_access_token():
 
 def convert_to_cest(timestamp):
     """
-    Converts a given timestamp to Central European Summer Time (CET/CEST) format.
-    If the timestamp is in milliseconds (i.e. > 1e10), it divides by 1000.
-    If the timestamp is None or not a valid number, returns empty strings.
+    Converts a given timestamp to CEST. If timestamp is None or invalid, returns empty strings.
+    Also converts milliseconds (if needed) to seconds.
     """
     try:
         if timestamp is None:
             return "", ""
-        # Ensure timestamp is a float or int
         ts = float(timestamp)
-        # Check if timestamp is in milliseconds; if so, convert to seconds.
-        if ts > 1e10:
+        if ts > 1e10:  # assume milliseconds
             ts = ts / 1000.0
         utc_time = datetime.utcfromtimestamp(ts)
         cest = pytz.timezone('Europe/Berlin')
@@ -84,11 +82,9 @@ def structure_data(data, include_error_metadata=False):
         if isinstance(row, dict):
             structured_row = {}
             for col, value in row.items():
-                # If the value is None, simply pass it along
                 if value is None:
                     structured_row[col] = None
                     continue
-
                 if col == 'timeStamp':
                     date_str, time_str = convert_to_cest(value)
                     structured_row['Device local Date'] = date_str
@@ -111,7 +107,6 @@ def structure_data(data, include_error_metadata=False):
                     structured_row['Error Name'] = err_name
                     structured_row['Description'] = err_desc
                 elif isinstance(value, list):
-                    # Process list values (for example: ZoneTemperature4, requiredTemperature, heaterCurrent)
                     for idx, item in enumerate(value):
                         structured_row[f"{col}_item{idx+1}"] = item
                 elif isinstance(value, dict):
@@ -124,16 +119,19 @@ def structure_data(data, include_error_metadata=False):
     return pd.DataFrame(rows)
 
 def df_to_records(df):
-    """
-    Replace NaN values with None and convert numpy scalar types to native Python types.
-    """
     df = df.where(pd.notnull(df), None)
     return df.applymap(lambda x: x.item() if hasattr(x, 'item') else x).to_dict(orient='records')
 
-def fetch_data(url, payload, access_token):
+def fetch_data(url, payload, access_token, max_pages=None):
+    """Fetches data from the API by iterating through pages.
+       If max_pages is set, stops after that many pages.
+    """
     all_records = []
     page = 1
     while True:
+        if max_pages is not None and page > max_pages:
+            logging.info("Reached max_pages limit: %s", max_pages)
+            break
         payload['page'] = page
         local_headers = {"Content-Type": "application/json", "x-access-token": access_token}
         try:
@@ -461,10 +459,7 @@ def data_view():
 
 @app.route('/api/machine_data', methods=['GET', 'POST'])
 def machine_data_lazy():
-    if request.method == 'GET':
-        data = request.args.to_dict()
-    else:
-        data = request.get_json() or {}
+    data = request.get_json() or request.args.to_dict()
     draw = data.get('draw', 1)
     start = int(data.get('start', 0))
     length = int(data.get('length', 10))
@@ -475,90 +470,104 @@ def machine_data_lazy():
     if not access_token:
         return jsonify({"error": "Failed to obtain access token from remote API."}), 503
 
-    machine_url = f"{base_url}/machine/single"
-    all_data = fetch_data(machine_url, {
-        "machineId": machine_id,
-        "nFilter": {},
-        "sortBy": "DESC",
-        "sortValue": "timeStamp",
-        "download": 0,
-        "fields": [],
-        "limit": 100
-    }, access_token)
-    df_all = structure_data(all_data)
-    
-    filters = {
-        "aqi_min": data.get("aqi_min", None),
-        "aqi_max": data.get("aqi_max", None),
-        "humidity_min": data.get("humidity_min", None),
-        "humidity_max": data.get("humidity_max", None),
-        "roomTemperature_min": data.get("roomTemperature_min", None),
-        "roomTemperature_max": data.get("roomTemperature_max", None),
-        "busVoltage_min": data.get("busVoltage_min", None),
-        "busVoltage_max": data.get("busVoltage_max", None),
-        "arrivalDate_min": data.get("arrivalDate_min", None),
-        "arrivalDate_max": data.get("arrivalDate_max", None),
-        "arrivalTime_min": data.get("arrivalTime_min", None),
-        "arrivalTime_max": data.get("arrivalTime_max", None),
-        "zone1_diff_min": data.get("zone1_diff_min", None),
-        "zone1_diff_max": data.get("zone1_diff_max", None),
-        "zone2_diff_min": data.get("zone2_diff_min", None),
-        "zone2_diff_max": data.get("zone2_diff_max", None),
-        "zone3_diff_min": data.get("zone3_diff_min", None),
-        "zone3_diff_max": data.get("zone3_diff_max", None),
-        "zone4_diff_min": data.get("zone4_diff_min", None),
-        "zone4_diff_max": data.get("zone4_diff_max", None)
-    }
-    if filters["arrivalDate_min"]:
-        df_all = df_all[df_all["Arrival Date"] >= filters["arrivalDate_min"]]
-    if filters["arrivalDate_max"]:
-        df_all = df_all[df_all["Arrival Date"] <= filters["arrivalDate_max"]]
-    if filters["arrivalTime_min"]:
-        df_all = df_all[df_all["Arrival Time"] >= filters["arrivalTime_min"]]
-    if filters["arrivalTime_max"]:
-        df_all = df_all[df_all["Arrival Time"] <= filters["arrivalTime_max"]]
-    for col in ["aqi", "humidity", "roomTemperature", "busVoltage"]:
-        if col in df_all.columns:
-            df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
-            if filters.get(col + "_min"):
+    # Determine if any filtering criteria are applied
+    filter_keys = ["aqi_min", "aqi_max", "humidity_min", "humidity_max",
+                   "roomTemperature_min", "roomTemperature_max", "busVoltage_min", "busVoltage_max",
+                   "arrivalDate_min", "arrivalDate_max", "arrivalTime_min", "arrivalTime_max",
+                   "zone1_diff_min", "zone1_diff_max", "zone2_diff_min", "zone2_diff_max",
+                   "zone3_diff_min", "zone3_diff_max", "zone4_diff_min", "zone4_diff_max"]
+    filtering_applied = any(data.get(k) is not None for k in filter_keys)
+
+    if not filtering_applied:
+        # No filtering: use remote API pagination to fetch only the needed page.
+        remote_limit = 100
+        remote_page = start // remote_limit + 1
+        payload_remote = {
+            "machineId": machine_id,
+            "nFilter": {},
+            "sortBy": "DESC",
+            "sortValue": "timeStamp",
+            "download": 0,
+            "fields": [],
+            "limit": remote_limit,
+            "page": remote_page
+        }
+        local_headers = {"Content-Type": "application/json", "x-access-token": access_token}
+        try:
+            response = requests.post(f"{base_url}/machine/single", json=payload_remote, headers=local_headers, verify=False, timeout=30)
+            response.raise_for_status()
+            result = response.json().get("data", {})
+            records = result.get("result", [])
+            total = result.get("totalMachines", len(records))
+        except requests.exceptions.RequestException as e:
+            logging.error("Error fetching data: %s", e)
+            return jsonify({"error": "Error fetching data from remote API"}), 503
+        # Slice the records based on the offset within the current remote page
+        offset_in_page = start % remote_limit
+        sliced_records = records[offset_in_page: offset_in_page + length]
+        df_all = structure_data(sliced_records)
+        total_records = total
+    else:
+        # Filtering applied: fetch data from all pages (up to a maximum to prevent timeouts)
+        payload_remote = {
+            "machineId": machine_id,
+            "nFilter": {},
+            "sortBy": "DESC",
+            "sortValue": "timeStamp",
+            "download": 0,
+            "fields": [],
+            "limit": 100
+        }
+        all_data = fetch_data(f"{base_url}/machine/single", payload_remote, access_token, max_pages=50)
+        df_all = structure_data(all_data)
+        # Apply filtering based on arrival date/time and numeric criteria
+        if data.get("arrivalDate_min"):
+            df_all = df_all[df_all["Arrival Date"] >= data["arrivalDate_min"]]
+        if data.get("arrivalDate_max"):
+            df_all = df_all[df_all["Arrival Date"] <= data["arrivalDate_max"]]
+        if data.get("arrivalTime_min"):
+            df_all = df_all[df_all["Arrival Time"] >= data["arrivalTime_min"]]
+        if data.get("arrivalTime_max"):
+            df_all = df_all[df_all["Arrival Time"] <= data["arrivalTime_max"]]
+        for col in ["aqi", "humidity", "roomTemperature", "busVoltage"]:
+            if col in df_all.columns:
+                df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
+                if data.get(col + "_min"):
+                    try:
+                        df_all = df_all[df_all[col] >= float(data[col + "_min"])]
+                    except Exception:
+                        pass
+                if data.get(col + "_max"):
+                    try:
+                        df_all = df_all[df_all[col] <= float(data[col + "_max"])]
+                    except Exception:
+                        pass
+        # Compute zone differences if possible
+        for zone in [1, 2, 3, 4]:
+            temp_col = f"ZoneTemperature4_item{zone}"
+            req_col = f"requiredTemperature_item{zone}"
+            diff_col = f"zone{zone}_diff"
+            if temp_col in df_all.columns and req_col in df_all.columns:
+                df_all[diff_col] = pd.to_numeric(df_all[temp_col], errors='coerce') - pd.to_numeric(df_all[req_col], errors='coerce')
+        for zone in [1, 2, 3, 4]:
+            diff_col = f"zone{zone}_diff"
+            if data.get(f"zone{zone}_diff_min"):
                 try:
-                    min_val = float(filters[col + "_min"])
-                    df_all = df_all[df_all[col] >= min_val]
+                    df_all = df_all[df_all[diff_col] >= float(data[f"zone{zone}_diff_min"])]
                 except Exception:
                     pass
-            if filters.get(col + "_max"):
+            if data.get(f"zone{zone}_diff_max"):
                 try:
-                    max_val = float(filters[col + "_max"])
-                    df_all = df_all[df_all[col] <= max_val]
+                    df_all = df_all[df_all[diff_col] <= float(data[f"zone{zone}_diff_max"])]
                 except Exception:
                     pass
-    for zone in [1, 2, 3, 4]:
-        temp_col = f"ZoneTemperature4_item{zone}"
-        req_col = f"requiredTemperature_item{zone}"
-        diff_col = f"zone{zone}_diff"
-        if temp_col in df_all.columns and req_col in df_all.columns:
-            df_all[diff_col] = pd.to_numeric(df_all[temp_col], errors='coerce') - pd.to_numeric(df_all[req_col], errors='coerce')
-    for zone in [1, 2, 3, 4]:
-        diff_col = f"zone{zone}_diff"
-        if filters.get(f"zone{zone}_diff_min"):
-            try:
-                min_val = float(filters[f"zone{zone}_diff_min"])
-                df_all = df_all[df_all[diff_col] >= min_val]
-            except Exception:
-                pass
-        if filters.get(f"zone{zone}_diff_max"):
-            try:
-                max_val = float(filters[f"zone{zone}_diff_max"])
-                df_all = df_all[df_all[diff_col] <= max_val]
-            except Exception:
-                pass
-    total = len(df_all)
-    df_page = df_all.iloc[start:start+length]
-    data_records = df_to_records(df_page)
+        total_records = len(df_all)
+        df_all = df_all.iloc[start:start+length]
+    data_records = df_to_records(df_all)
     return jsonify({
         "draw": draw,
-        "recordsTotal": total,
-        "recordsFiltered": total,
+        "recordsTotal": total_records,
+        "recordsFiltered": total_records,
         "data": data_records
     })
 
@@ -713,4 +722,6 @@ def dashboard_graphs():
          room_temp=room_temp, enclosure_temp=enclosure_temp)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Bind to the port specified by the PORT environment variable (Render.com requirement)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=True)
