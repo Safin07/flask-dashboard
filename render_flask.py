@@ -583,25 +583,38 @@ def dashboard_graphs():
     access_token = get_access_token()
     if not access_token:
         return "Failed to obtain access token", 503
-    all_data = fetch_data(f"{base_url}/machine/single", {
-        "machineId": machine_id,
-        "nFilter": {},
-        "sortBy": "DESC",
-        "sortValue": "timeStamp",
-        "download": 0,
-        "fields": [],
-        "limit": 100
-    }, access_token)
-    df = structure_data(all_data)
-    if start_date:
-        df = df[df["Device local Date"] >= start_date]
-    if end_date:
-        df = df[df["Device local Date"] <= end_date]
-    if start_time:
-        df = df[df["Device local Time"] >= start_time]
-    if end_time:
-        df = df[df["Device local Time"] <= end_time]
-    x_values = df["Device local Time"].tolist()[::-1]
+
+    try:
+        # Limit to 50 pages to avoid timeouts when a huge dataset is returned.
+        all_data = fetch_data(
+            f"{base_url}/machine/single",
+            {
+                "machineId": machine_id,
+                "nFilter": {},
+                "sortBy": "DESC",
+                "sortValue": "timeStamp",
+                "download": 0,
+                "fields": [],
+                "limit": 100
+            },
+            access_token,
+            max_pages=50
+        )
+        df = structure_data(all_data)
+        # Apply date/time filtering if provided
+        if start_date:
+            df = df[df["Device local Date"] >= start_date]
+        if end_date:
+            df = df[df["Device local Date"] <= end_date]
+        if start_time:
+            df = df[df["Device local Time"] >= start_time]
+        if end_time:
+            df = df[df["Device local Time"] <= end_time]
+        # If no data or column missing, use an empty list
+        x_values = df["Device local Time"].tolist()[::-1] if "Device local Time" in df.columns and not df.empty else []
+    except Exception as e:
+        logging.error("Error in dashboard data processing: %s", e)
+        return "Error processing dashboard data", 500
 
     def get_zone_data(zone):
         temp = df.get(f"ZoneTemperature4_item{zone}", pd.Series([])).tolist()[::-1]
@@ -712,16 +725,12 @@ def dashboard_graphs():
       </script>
     </body>
     </html>
-    ''', machine_id=machine_id,
-         x_values=x_values,
-         zone1_temp=zone1_temp, zone1_req=zone1_req, zone1_heater=zone1_heater, zone1_ymin=zone1_ymin, zone1_ymax=zone1_ymax,
-         zone2_temp=zone2_temp, zone2_req=zone2_req, zone2_heater=zone2_heater, zone2_ymin=zone2_ymin, zone2_ymax=zone2_ymax,
-         zone3_temp=zone3_temp, zone3_req=zone3_req, zone3_heater=zone3_heater, zone3_ymin=zone3_ymin, zone3_ymax=zone3_ymax,
-         zone4_temp=zone4_temp, zone4_req=zone4_req, zone4_heater=zone4_heater, zone4_ymin=zone4_ymin, zone4_ymax=zone4_ymax,
-         person_in_bed=person_in_bed, bus_voltage=bus_voltage, aqi_data=aqi_data, humidity_data=humidity_data,
-         room_temp=room_temp, enclosure_temp=enclosure_temp)
-
-if __name__ == '__main__':
-    # Bind to the port specified by the PORT environment variable (Render.com requirement)
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    ''',
+    machine_id=machine_id,
+    x_values=x_values,
+    zone1_temp=zone1_temp, zone1_req=zone1_req, zone1_heater=zone1_heater, zone1_ymin=zone1_ymin, zone1_ymax=zone1_ymax,
+    zone2_temp=zone2_temp, zone2_req=zone2_req, zone2_heater=zone2_heater, zone2_ymin=zone2_ymin, zone2_ymax=zone2_ymax,
+    zone3_temp=zone3_temp, zone3_req=zone3_req, zone3_heater=zone3_heater, zone3_ymin=zone3_ymin, zone3_ymax=zone3_ymax,
+    zone4_temp=zone4_temp, zone4_req=zone4_req, zone4_heater=zone4_heater, zone4_ymin=zone4_ymin, zone4_ymax=zone4_ymax,
+    person_in_bed=person_in_bed, bus_voltage=bus_voltage, aqi_data=aqi_data, humidity_data=humidity_data,
+    room_temp=room_temp, enclosure_temp=enclosure_temp)
