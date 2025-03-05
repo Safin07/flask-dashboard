@@ -34,6 +34,7 @@ sign_in_payload = {
 headers = {"Content-Type": "application/json"}
 
 # (Truncated) error metadata dictionary
+
 error_metadata = {
     1: ("ERR_SYSTEM_BOOT", "Device failed to initialize during power on boot"),
     2: ("ERR_SYSTEM_PANIC", "Device restarted due to Panic error by the controller"),
@@ -584,7 +585,8 @@ def data_view():
       </script>
     </body>
     </html>
-    ''', machine_id=machine_id, inactive_df=inactive_df, error_df=error_df,
+    ''', machine_id=machine_id,
+         inactive_df=inactive_df, error_df=error_df,
          device_df=device_df, fota_df=fota_df, cota_df=cota_df)
 
 @app.route('/api/machine_data', methods=['GET', 'POST'])
@@ -600,7 +602,6 @@ def machine_data_lazy():
     if not access_token:
         return jsonify({"error": "Failed to obtain access token from remote API."}), 503
 
-    # Determine if filtering criteria are applied.
     filter_keys = ["aqi_min", "aqi_max", "humidity_min", "humidity_max",
                    "roomTemperature_min", "roomTemperature_max", "busVoltage_min", "busVoltage_max",
                    "arrivalDate_min", "arrivalDate_max", "arrivalTime_min", "arrivalTime_max",
@@ -609,7 +610,6 @@ def machine_data_lazy():
     filtering_applied = any(data.get(k) is not None for k in filter_keys)
 
     if not filtering_applied:
-        # No filtering: use remote API pagination to fetch only the needed page.
         remote_limit = 100
         remote_page = start // remote_limit + 1
         payload_remote = {
@@ -632,13 +632,11 @@ def machine_data_lazy():
         except requests.exceptions.RequestException as e:
             logging.error("Error fetching data: %s", e)
             return jsonify({"error": "Error fetching data from remote API"}), 503
-        # Slice the records based on the offset within the current remote page
         offset_in_page = start % remote_limit
         sliced_records = records[offset_in_page: offset_in_page + length]
         df_all = structure_data(sliced_records)
         total_records = total
     else:
-        # Filtering applied: fetch data from all pages (up to a maximum)
         payload_remote = {
             "machineId": machine_id,
             "nFilter": {},
@@ -704,6 +702,7 @@ def dashboard_graphs():
     machine_id = request.args.get('machine_id')
     if not machine_id:
         return "Machine ID not provided", 400
+    # Retrieve filters from query parameters.
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     start_time = request.args.get('start_time')
@@ -722,10 +721,13 @@ def dashboard_graphs():
     }, access_token)
     df = structure_data(all_data)
     # If no date/time filters are provided, limit data to the latest active day
+    # and pre-fill the start and end date fields.
     if not (start_date or end_date or start_time or end_time):
         if not df.empty:
             latest_date = df["Device local Date"].max()
             df = df[df["Device local Date"] == latest_date]
+            start_date = latest_date
+            end_date = latest_date
     else:
         if start_date:
             df = df[df["Device local Date"] >= start_date]
@@ -779,17 +781,37 @@ def dashboard_graphs():
          <h1>Dashboard for Machine {{ machine_id }}</h1>
          <form method="get" action="/dashboard" class="row g-3 mb-4">
            <input type="hidden" name="machine_id" value="{{ machine_id }}">
-           <div class="col-auto"><label for="start_date" class="col-form-label">Start Date</label></div>
-           <div class="col-auto"><input type="date" id="start_date" name="start_date" class="form-control" value="{{ request.args.get('start_date', '') }}"></div>
-           <div class="col-auto"><label for="end_date" class="col-form-label">End Date</label></div>
-           <div class="col-auto"><input type="date" id="end_date" name="end_date" class="form-control" value="{{ request.args.get('end_date', '') }}"></div>
-           <div class="col-auto"><label for="start_time" class="col-form-label">Start Time</label></div>
-           <div class="col-auto"><input type="time" id="start_time" name="start_time" class="form-control" value="{{ request.args.get('start_time', '') }}"></div>
-           <div class="col-auto"><label for="end_time" class="col-form-label">End Time</label></div>
-           <div class="col-auto"><input type="time" id="end_time" name="end_time" class="form-control" value="{{ request.args.get('end_time', '') }}"></div>
-           <div class="col-auto"><button type="submit" class="btn btn-primary">Apply Date Filter</button></div>
+           <div class="col-auto">
+             <label for="start_date" class="col-form-label">Start Date</label>
+           </div>
+           <div class="col-auto">
+             <input type="date" id="start_date" name="start_date" class="form-control" value="{{ start_date }}">
+           </div>
+           <div class="col-auto">
+             <label for="end_date" class="col-form-label">End Date</label>
+           </div>
+           <div class="col-auto">
+             <input type="date" id="end_date" name="end_date" class="form-control" value="{{ end_date }}">
+           </div>
+           <div class="col-auto">
+             <label for="start_time" class="col-form-label">Start Time</label>
+           </div>
+           <div class="col-auto">
+             <input type="time" id="start_time" name="start_time" class="form-control" value="{{ request.args.get('start_time', '') }}">
+           </div>
+           <div class="col-auto">
+             <label for="end_time" class="col-form-label">End Time</label>
+           </div>
+           <div class="col-auto">
+             <input type="time" id="end_time" name="end_time" class="form-control" value="{{ request.args.get('end_time', '') }}">
+           </div>
+           <div class="col-auto">
+             <button type="submit" class="btn btn-primary">Apply Date Filter</button>
+           </div>
          </form>
-         <div class="mb-4"><a href="/data?machine_id={{ machine_id }}" class="btn btn-secondary">Back to Data View</a></div>
+         <div class="mb-4">
+           <a href="/data?machine_id={{ machine_id }}" class="btn btn-secondary">Back to Data View</a>
+         </div>
          <h3>Zone 1</h3><canvas id="chartZone1"></canvas>
          <h3>Zone 2</h3><canvas id="chartZone2"></canvas>
          <h3>Zone 3</h3><canvas id="chartZone3"></canvas>
@@ -853,7 +875,7 @@ def dashboard_graphs():
          zone3_temp=zone3_temp, zone3_req=zone3_req, zone3_heater=zone3_heater, zone3_ymin=zone3_ymin, zone3_ymax=zone3_ymax,
          zone4_temp=zone4_temp, zone4_req=zone4_req, zone4_heater=zone4_heater, zone4_ymin=zone4_ymin, zone4_ymax=zone4_ymax,
          person_in_bed=person_in_bed, bus_voltage=bus_voltage, aqi_data=aqi_data, humidity_data=humidity_data,
-         room_temp=room_temp, enclosure_temp=enclosure_temp)
+         room_temp=room_temp, enclosure_temp=enclosure_temp, start_date=start_date, end_date=end_date)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
