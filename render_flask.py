@@ -40,7 +40,138 @@ error_metadata = {
     3: ("ERR_SYSTEM_INTWDT", "Device restarted due to interrupt watchdog timer by the controller"),
     4: ("ERR_SYSTEM_TASKWDT", "Device restarted due to task watchdog timer by the controller"),
     5: ("ERR_SYSTEM_BROWNOUT", "Device restarted due to supply voltage below brownout threshold level"),
-    # ... (other error codes) ...
+    6: ("ERR_SYSTEM_CACHE", "Device restarted due to system cache failure"),
+    7: ("ERR_SYSTEM_MEMORYPROTECTION", "Device restarted due to memory protection failure"),
+    8: ("ERR_SYSTEM_STACK", "Device restarted due to stack failure"),
+    9: ("ERR_SYSTEM_HEAP", "Device restarted due to Heap memory failure"),
+    10: ("ERR_SYSTEM_UBSAN", "Device restarted due to Undefined behavior sanitizer (UBSAN) checks"),
+    11: ("Unknown Error", "Unknown Description"),
+    12: ("Unknown Error", "Unknown Description"),
+    13: ("Unknown Error", "Unknown Description"),
+    14: ("Unknown Error", "Unknown Description"),
+    15: ("Unknown Error", "Unknown Description"),
+    16: ("Unknown Error", "Unknown Description"),
+    17: ("Unknown Error", "Unknown Description"),
+    18: ("Unknown Error", "Unknown Description"),
+    19: ("Unknown Error", "Unknown Description"),
+    20: ("ERR_HEATER1_FAILURE", "Heater1 circuit is in either short circuit or over temperature or current threshold limit"),
+    21: ("ERR_HEATER1_OPEN", "Heater1 is in open state"),
+    22: ("ERR_HEATER1_OUTOFRANGE", "Heater1 current is out of range"),
+    23: ("ERR_HEATER1_MIN_CURRENT", "Heater1 current is below minimum Threshold"),
+    24: ("ERR_HEATER2_FAILURE", "Heater2 circuit is in either short circuit or over temperature or current threshold limit"),
+    25: ("ERR_HEATER2_OPEN", "Heater2 is in open state"),
+    26: ("ERR_HEATER2_OUTOFRANGE", "Heater2 current is out of range"),
+    27: ("ERR_HEATER2_MIN_CURRENT", "Heater2 current is below minimum Threshold"),
+    28: ("ERR_HEATER3_FAILURE", "Heater3 circuit is in either short circuit or over temperature or current threshold limit"),
+    29: ("ERR_HEATER3_OPEN", "Heater3 is in open state"),
+    30: ("ERR_HEATER3_OUTOFRANGE", "Heater3 current is out of range"),
+    31: ("ERR_HEATER3_MIN_CURRENT", "Heater3 current is below minimum Threshold"),
+    32: ("ERR_HEATER4_FAILURE", "Heater4 circuit is in either short circuit or over temperature or current threshold limit"),
+    33: ("ERR_HEATER4_OPEN", "Heater4 is in open state"),
+    34: ("ERR_HEATER4_OUTOFRANGE", "Heater4 current is out of range"),
+    35: ("ERR_HEATER4_MIN_CURRENT", "Heater4 current is below minimum Threshold"),
+    36: ("ERR_HEATER_SENSOR_MISMATCH", "Heater and sensor mismatch"),
+    37: ("Unknown Error", "Unknown Description"),
+    38: ("Unknown Error", "Unknown Description"),
+    39: ("Unknown Error", "Unknown Description"),
+    40: ("ERR_TSENSOR1_OPEN", "Zone 1 sensor is short to ground or in open state"),
+    41: ("ERR_TSENSOR1_FAILURE", "Zone 1 sensor is shorted to source"),
+    42: ("ERR_TSENSOR1_OUTOFRANGE", "Zone 1 sensor is out of range"),
+    43: ("ERR_TSENSOR2_OPEN", "Zone 2 sensor is short to ground or in open state"),
+    44: ("ERR_TSENSOR2_FAILURE", "Zone 2 sensor is shorted to source"),
+    45: ("ERR_TSENSOR2_OUTOFRANGE", "Zone 2 sensor is out of range"),
+    46: ("ERR_TSENSOR3_OPEN", "Zone 3 sensor is short to ground or in open state"),
+    47: ("ERR_TSENSOR3_FAILURE", "Zone 3 sensor is shorted to source"),
+    48: ("ERR_TSENSOR3_OUTOFRANGE", "Zone 3 sensor is out of range"),
+    49: ("ERR_TSENSOR4_OPEN", "Zone 4 sensor is short to ground or in open state"),
+    50: ("ERR_TSENSOR4_FAILURE", "Zone 4 sensor is shorted to source"),
+    51: ("ERR_TSENSOR4_OUTOFRANGE", "Zone 4 sensor is out of range"),
+    52: ("ERR_PIB_SENSOR_OPEN", "Zone PIB sensor is short to ground or in open state"),
+    53: ("ERR_PIB_SENSOR_FAILURE", "Zone PIB sensor is shorted to source"),
+    54: ("ERR_PIB_SENSOR_OUTOFRANGE", "Zone PIB sensor is out of range"),
+    60: ("ERR_TSENSOR5_OPEN", "Enclosure sensor is short to ground or in open state"),
+    61: ("ERR_TSENSOR5_FAILURE", "Enclosure sensor is shorted to source"),
+    62: ("ERR_TSENSOR5_OUTOFRANGE", "Enclosure sensor is out of range"),
+    70: ("ERR_BLE_INIT", "BLE stack Initialization failed"),
+    71: ("ERR_BLE_SERVICESINIT", "BLE service Initialization failed"),
+    72: ("ERR_BLE_CONNECT", "BLE connection failed"),
+    73: ("ERR_BLE_ADVT", "BLE Advertisement failed"),
+    74: ("ERR_BLE_PROTOCOL", "Receive wrong/unexpected BLE frame format"),
+    80: ("ERR_SMGR_INIT", "Storage manager (NVS) initialization failed"),
+    81: ("ERR_SMGR_PIB_INDEX_RD", "Reading Person-In-Bed Index from NVS memory failed"),
+    82: ("ERR_SMGR_PIB_INDEX_WR", "Writing Person-In-Bed Index to NVS memory failed"),
+    83: ("ERR_SMGR_PIB_SET", "Person-In-Bed Set write commit failed"),
+    84: ("ERR_SMGR_PIB_GET", "Person-In-Bed Get Read failed"),
+    85: ("ERR_SMGR_MD_INDEX_RD", "Reading Machine data Index from NVS memory failed"),
+    86: ("ERR_SMGR_MD_INDEX_WR", "Writing Machine data to NVS memory failed"),
+    87: ("ERR_SMGR_MD_SET", "Machine data Set write commit failed"),
+    88: ("ERR_SMGR_MD_GET", "Machine data Get Read failed"),
+    89: ("ERR_SMGR_ERH_INDEX_RD", "Reading Error History Index from NVS memory failed"),
+    90: ("ERR_SMGR_ERH_INDEX_WR", "Writing Error History to NVS memory failed"),
+    91: ("ERR_SMGR_ERH_SET", "Error History Set write commit failed"),
+    92: ("ERR_SMGR_ERH_GET", "Error History Get Read failed"),
+    100: ("ERR_CONFIG_READ", "Failure in reading Pib configuration parameters from NVS and updating them to Runtime variables"),
+    101: ("ERR_CONFIG_WRITE", "Failure in updating Zone modifiers and Failure in updating Pib configuration parameters to NVS"),
+    120: ("ERR_BME_INIT", "BME initialization failure due to library or due to I2C communication failure"),
+    121: ("ERR_BME_BSEC_INIT", "BME initialization failure due to library or I2C communication failure"),
+    124: ("ERR_BME_RESET", "Device Not able to Reset the BME sensor"),
+    126: ("ERR_BME_HUMIDITY", "BME Humidity sensor value is out of range"),
+    130: ("ERR_BME_TASK", "Failed to start BME task"),
+    140: ("ERR_CMDH_DEVICESTATUS", "Failure in appending device status data to BLE buffer"),
+    147: ("ERR_CMDH_MACHINEDATA", "Failure in appending machine data to BLE buffer"),
+    150: ("ERR_CMU_DEVICEINFO", "Failure in reading device information using BLE"),
+    160: ("ERR_STM_TASKCREATE", "State machine task creation failed"),
+    170: ("ERR_TIMER1_INIT", "Error if Zone scan timer failed to initialize"),
+    171: ("ERR_TIMER1_START", "Error if Zone scan timer failed to start"),
+    172: ("ERR_TIMER1_STOP", "Error if Zone scan timer failed to stop"),
+    173: ("ERR_TIMER1_DELETE", "Error if Zone scan timer failed to delete"),
+    174: ("ERR_TIMER2_INIT", "Error if LED timer failed to initialize"),
+    175: ("ERR_TIMER2_START", "Error if LED timer failed to start"),
+    176: ("ERR_TIMER2_STOP", "Error if LED timer failed to stop"),
+    177: ("ERR_TIMER2_DELETE", "Error if LED timer failed to delete"),
+    178: ("ERR_TIMER3_INIT", "Error if SW timer for WDT failed to initialize"),
+    179: ("ERR_TIMER3_START", "Error if SW timer for WDT failed to start"),
+    180: ("ERR_TIMER3_STOP", "Error if SW timer for WDT failed to stop"),
+    181: ("ERR_TIMER3_DELETE", "Error if SW timer for WDT failed to delete"),
+    182: ("ERR_GPIO_INIT", "Error if GPIO Initialization failed"),
+    183: ("ERR_GPIO_SETOUTPUTLEVEL", "Error if Setting output level for GPIO failed"),
+    184: ("ERR_WDT_INIT", "Error if WDT initialization failed"),
+    185: ("ERR_WDT_WDIRESET", "Error if WDT - Input signal reset failed"),
+    190: ("ERR_I2C0_INIT", "I2C0 Initialization failure"),
+    191: ("ERR_I2C1_INIT", "I2C1 Initialization failure"),
+    192: ("ERR_I2C_PARAMETER", "I2C Invalid parameter return"),
+    193: ("ERR_I2C_START", "I2C driver start failure"),
+    194: ("ERR_I2C_STOP", "I2C driver stop failure"),
+    195: ("ERR_I2C_READ", "I2C driver read failure"),
+    196: ("ERR_I2C_WRITE", "I2C driver write failure"),
+    197: ("ERR_ADC_CALIBRATION", "ADC Calibration failure"),
+    198: ("ERR_ADC_CONFIGURATION", "ADC Configuration failure"),
+    199: ("ERR_ADC_READ", "ADC read failure"),
+    200: ("ERR_ADC_PARAMETER", "ADC Invalid parameter return"),
+    201: ("ERR_ADC_GETRAWDATA", "ADC getting raw data failure"),
+    202: ("ERR_ADC_CHANNEL", "ADC Channel failure"),
+    203: ("ERR_ADC_BUSVOLTAGE", "Set if Bus voltage goes low below the threshold voltage"),
+    204: ("ERR_HISW_INIT", "High side switch Initialization failure"),
+    205: ("ERR_UART_DISABLE", "Disabling UART ROM download mode and UART driver delete for FCT failure"),
+    210: ("ERR_RTC_INIT", "External RTC initialization failure"),
+    211: ("ERR_RTC_CONFIG", "RTC configuration Error"),
+    212: ("ERR_RTC_READ", "RTC reading Error"),
+    213: ("ERR_RTC_WRITE", "RTC writing error"),
+    214: ("ERR_RTC_BAT_LOW", "Set if Battery voltage goes low below the threshold voltage"),
+    220: ("ERR_MQTT_CONN", "Set if MQTT connection to client failed"),
+    221: ("ERR_MQTT_CONN_INTPED", "Set if MQTT connection is interrupted"),
+    222: ("ERR_MQTT_PUB", "Set if publish failed"),
+    223: ("ERR_HTTP_CONN", "Set if HTTP connection failed"),
+    224: ("ERR_HTTP_DISCONN", "Set if HTTP connection was interrupted"),
+    225: ("ERR_HTTP_Post", "Set if HTTP set post field failed"),
+    226: ("ERR_OTA_INIT", "Set if OTA initialization failed"),
+    227: ("ERR_HTTP_READ_AND_OTA_WRITE", "Set if HTTP read failed"),
+    228: ("ERR_HTTP_READ_COMPLETE", "Set if complete data is not received"),
+    229: ("ERR_OTA_COMPLETE", "Set if OTA is not completed"),
+    230: ("ERR_MD5_HASH", "Set if MD5 mismatch detected"),
+    231: ("ERR_WIFI_FOTA_IN_PROGRESS", "Set if WiFi FOTA is in progress and BLE FOTA is triggered"),
+    232: ("ERR_BLE_FOTA_IN_PROGRESS", "Set if BLE FOTA is in progress and WiFi FOTA is triggered"),
+    233: ("ERR_HTTPS_POST_MD_DATA", "Set if Machine data transmission through WiFi failed"),
     234: ("ERR_WIFI_TASKCREATE", "WiFi Task creation failed")
 }
 
@@ -453,8 +584,7 @@ def data_view():
       </script>
     </body>
     </html>
-    ''', machine_id=machine_id,
-         inactive_df=inactive_df, error_df=error_df,
+    ''', machine_id=machine_id, inactive_df=inactive_df, error_df=error_df,
          device_df=device_df, fota_df=fota_df, cota_df=cota_df)
 
 @app.route('/api/machine_data', methods=['GET', 'POST'])
@@ -470,7 +600,7 @@ def machine_data_lazy():
     if not access_token:
         return jsonify({"error": "Failed to obtain access token from remote API."}), 503
 
-    # Determine if any filtering criteria are applied
+    # Determine if filtering criteria are applied.
     filter_keys = ["aqi_min", "aqi_max", "humidity_min", "humidity_max",
                    "roomTemperature_min", "roomTemperature_max", "busVoltage_min", "busVoltage_max",
                    "arrivalDate_min", "arrivalDate_max", "arrivalTime_min", "arrivalTime_max",
@@ -508,7 +638,7 @@ def machine_data_lazy():
         df_all = structure_data(sliced_records)
         total_records = total
     else:
-        # Filtering applied: fetch data from all pages (up to a maximum to prevent timeouts)
+        # Filtering applied: fetch data from all pages (up to a maximum)
         payload_remote = {
             "machineId": machine_id,
             "nFilter": {},
@@ -520,7 +650,6 @@ def machine_data_lazy():
         }
         all_data = fetch_data(f"{base_url}/machine/single", payload_remote, access_token, max_pages=50)
         df_all = structure_data(all_data)
-        # Apply filtering based on arrival date/time and numeric criteria
         if data.get("arrivalDate_min"):
             df_all = df_all[df_all["Arrival Date"] >= data["arrivalDate_min"]]
         if data.get("arrivalDate_max"):
@@ -542,7 +671,6 @@ def machine_data_lazy():
                         df_all = df_all[df_all[col] <= float(data[col + "_max"])]
                     except Exception:
                         pass
-        # Compute zone differences if possible
         for zone in [1, 2, 3, 4]:
             temp_col = f"ZoneTemperature4_item{zone}"
             req_col = f"requiredTemperature_item{zone}"
@@ -593,14 +721,20 @@ def dashboard_graphs():
         "limit": 100
     }, access_token)
     df = structure_data(all_data)
-    if start_date:
-        df = df[df["Device local Date"] >= start_date]
-    if end_date:
-        df = df[df["Device local Date"] <= end_date]
-    if start_time:
-        df = df[df["Device local Time"] >= start_time]
-    if end_time:
-        df = df[df["Device local Time"] <= end_time]
+    # If no date/time filters are provided, limit data to the latest active day
+    if not (start_date or end_date or start_time or end_time):
+        if not df.empty:
+            latest_date = df["Device local Date"].max()
+            df = df[df["Device local Date"] == latest_date]
+    else:
+        if start_date:
+            df = df[df["Device local Date"] >= start_date]
+        if end_date:
+            df = df[df["Device local Date"] <= end_date]
+        if start_time:
+            df = df[df["Device local Time"] >= start_time]
+        if end_time:
+            df = df[df["Device local Time"] <= end_time]
     x_values = df["Device local Time"].tolist()[::-1]
 
     def get_zone_data(zone):
@@ -703,12 +837,12 @@ def dashboard_graphs():
         createZoneChart("chartZone2", {{ x_values|tojson }}, {{ zone2_temp|tojson }}, {{ zone2_req|tojson }}, {{ zone2_heater|tojson }}, {{ zone2_ymin if zone2_ymin is not none else 'undefined' }}, {{ zone2_ymax if zone2_ymax is not none else 'undefined' }});
         createZoneChart("chartZone3", {{ x_values|tojson }}, {{ zone3_temp|tojson }}, {{ zone3_req|tojson }}, {{ zone3_heater|tojson }}, {{ zone3_ymin if zone3_ymin is not none else 'undefined' }}, {{ zone3_ymax if zone3_ymax is not none else 'undefined' }});
         createZoneChart("chartZone4", {{ x_values|tojson }}, {{ zone4_temp|tojson }}, {{ zone4_req|tojson }}, {{ zone4_heater|tojson }}, {{ zone4_ymin if zone4_ymin is not none else 'undefined' }}, {{ zone4_ymax if zone4_ymax is not none else 'undefined' }});
-        createSingleSeriesChart("chartPersonInBed", {{ x_values|tojson }}, {{ person_in_bed|tojson }}, "Person in Bed", "Person in Bed");
-        createSingleSeriesChart("chartBusVoltage", {{ x_values|tojson }}, {{ bus_voltage|tojson }}, "Bus Voltage", "Bus Voltage");
-        createSingleSeriesChart("chartAQI", {{ x_values|tojson }}, {{ aqi_data|tojson }}, "AQI", "AQI");
-        createSingleSeriesChart("chartHumidity", {{ x_values|tojson }}, {{ humidity_data|tojson }}, "Humidity", "Humidity");
-        createSingleSeriesChart("chartRoomTemp", {{ x_values|tojson }}, {{ room_temp|tojson }}, "Room Temperature", "Room Temperature");
-        createSingleSeriesChart("chartEnclosureTemp", {{ x_values|tojson }}, {{ enclosure_temp|tojson }}, "Enclosure Temperature", "Enclosure Temperature");
+        createSingleSeriesChart("chartPersonInBed", {{ x_values|tojson }}, {{ person_in_bed|tojson }}, "Person in Bed", "Person in Bed", 0, 100);
+        createSingleSeriesChart("chartBusVoltage", {{ x_values|tojson }}, {{ bus_voltage|tojson }}, "Bus Voltage", "Bus Voltage", 0, 25000);
+        createSingleSeriesChart("chartAQI", {{ x_values|tojson }}, {{ aqi_data|tojson }}, "AQI", "AQI", 0, 300);
+        createSingleSeriesChart("chartHumidity", {{ x_values|tojson }}, {{ humidity_data|tojson }}, "Humidity", "Humidity", 0, 100);
+        createSingleSeriesChart("chartRoomTemp", {{ x_values|tojson }}, {{ room_temp|tojson }}, "Room Temperature", "Room Temperature", 0, 50);
+        createSingleSeriesChart("chartEnclosureTemp", {{ x_values|tojson }}, {{ enclosure_temp|tojson }}, "Enclosure Temperature", "Enclosure Temperature", 0, 60);
       </script>
     </body>
     </html>
@@ -722,6 +856,5 @@ def dashboard_graphs():
          room_temp=room_temp, enclosure_temp=enclosure_temp)
 
 if __name__ == '__main__':
-    # Bind to the port specified by the PORT environment variable (Render.com requirement)
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=True)
