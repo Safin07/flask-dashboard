@@ -14,15 +14,17 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 app = Flask(__name__)
 CORS(app)
 
-# Update this path to point to your logo file
-LOGO_PATH = "logo3.png"
+# Update LOGO_PATH as needed
+LOGO_PATH = "/Users/safinchowdhury/Documents/logo3.png"
 
 app.secret_key = "some_secret_key_for_session"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Base URL for the API and sign in credentials
+# Base URL for the API
 base_url = "https://api-prod.variowell-iot.com/smart-mattress/api"
+
+# Sign in credentials
 sign_in_url = f"{base_url}/user/signIn"
 sign_in_payload = {
     "email": "smartmattress2023@gmail.com",
@@ -30,7 +32,7 @@ sign_in_payload = {
 }
 headers = {"Content-Type": "application/json"}
 
-# Error metadata dictionary (truncated for brevity)
+# (Truncated) error metadata dictionary
 error_metadata = {
     1: ("ERR_SYSTEM_BOOT", "Device failed to initialize during power on boot"),
     2: ("ERR_SYSTEM_PANIC", "Device restarted due to Panic error by the controller"),
@@ -55,14 +57,19 @@ def get_access_token():
         return None
 
 def convert_to_cest(timestamp):
-    """Convert UTC timestamp to CEST date and time strings."""
+    """
+    Converts a given timestamp to Central European Summer Time (CET/CEST) format.
+    If the timestamp is in milliseconds (i.e. > 1e10), it divides by 1000.
+    """
+    # Check if timestamp is in milliseconds; if so, convert it to seconds.
+    if timestamp > 1e10:
+        timestamp = timestamp / 1000.0
     utc_time = datetime.utcfromtimestamp(timestamp)
     cest = pytz.timezone('Europe/Berlin')
     cest_time = pytz.utc.localize(utc_time).astimezone(cest)
     return cest_time.strftime('%Y-%m-%d'), cest_time.strftime('%H:%M')
 
 def structure_data(data, include_error_metadata=False):
-    """Structure API response data into a pandas DataFrame with readable date/time formats."""
     rows = []
     for row in data:
         if isinstance(row, dict):
@@ -106,10 +113,10 @@ def df_to_records(df):
     Replace NaN values with None and convert numpy scalar types to native Python types.
     """
     df = df.where(pd.notnull(df), None)
+    # Use applymap to convert numpy scalars to native types
     return df.applymap(lambda x: x.item() if hasattr(x, 'item') else x).to_dict(orient='records')
 
 def fetch_data(url, payload, access_token):
-    """Fetch paginated data from a given URL."""
     all_records = []
     page = 1
     while True:
@@ -119,7 +126,7 @@ def fetch_data(url, payload, access_token):
             response = requests.post(url, json=payload, headers=local_headers, verify=False, timeout=30)
             response.raise_for_status()
             data = response.json().get("data", {}).get("result", [])
-            logging.info(f"Fetched data from API (page {page}): {data}")
+            logging.info(f"Fetched data from API: {data}")
             if not data:
                 break
             all_records.extend(data)
@@ -139,15 +146,20 @@ def fetch_device_info_for_machine(machine_id, access_token):
         data = resp.json().get("data", {}).get("result", [])
         if not data:
             return pd.DataFrame()
-        latest = next((rec for rec in data if rec.get("isLatest", False)), None)
+        latest = None
+        for rec in data:
+            if rec.get("isLatest", False):
+                latest = rec
+                break
         if not latest:
             latest = max(data, key=lambda x: x.get("Id", 0))
         if latest:
+            # Let convert_to_cest handle the unit (seconds vs. milliseconds)
             if "fwReleaseDate" in latest and latest["fwReleaseDate"]:
-                d, t = convert_to_cest(latest["fwReleaseDate"] / 1000)
+                d, t = convert_to_cest(latest["fwReleaseDate"])
                 latest["fwReleaseDate"] = f"{d} {t}"
             if "manufactureDate" in latest and latest["manufactureDate"]:
-                d, t = convert_to_cest(latest["manufactureDate"] / 1000)
+                d, t = convert_to_cest(latest["manufactureDate"])
                 latest["manufactureDate"] = f"{d} {t}"
         return pd.DataFrame([latest]) if latest else pd.DataFrame()
     except requests.exceptions.RequestException as e:
@@ -204,13 +216,9 @@ def fetch_cota_history_for_machine(machine_id, access_token):
 
 @app.route('/', methods=['GET'])
 def home():
-    try:
-        with open(LOGO_PATH, "rb") as f:
-            logo_data = f.read()
-        logo_base64 = base64.b64encode(logo_data).decode('utf-8')
-    except Exception as e:
-        logging.error(f"Error loading logo: {e}")
-        logo_base64 = ""
+    with open(LOGO_PATH, "rb") as f:
+        logo_data = f.read()
+    logo_base64 = base64.b64encode(logo_data).decode('utf-8')
     return render_template_string('''
     <!DOCTYPE html>
     <html lang="en">
@@ -227,9 +235,7 @@ def home():
     </head>
     <body>
       <div class="container logo-container">
-        {% if logo_base64 %}
-          <img src="data:image/png;base64,{{ logo_base64 }}" alt="Logo" height="80">
-        {% endif %}
+        <img src="data:image/png;base64,{{ logo_base64 }}" alt="Logo" height="80">
       </div>
       <div class="container">
         <h1 class="mt-5">Machine Data Dashboard</h1>
@@ -256,7 +262,7 @@ def data_view():
     if not access_token:
         return "Error obtaining access token.", 503
 
-    # Fetch data for different sections
+    # Fetch full tables for inactive data, error logs, device info, FOTA and COTA histories.
     inactive_payload = {
         "machineId": machine_id,
         "nFilter": {},
@@ -266,9 +272,7 @@ def data_view():
         "fields": [],
         "limit": 100
     }
-    inactive_data = fetch_data(f"{base_url}/machineInactive/singleMachineInactiveData", inactive_payload, access_token)
-    inactive_df = structure_data(inactive_data)
-
+    inactive_df = structure_data(fetch_data(f"{base_url}/machineInactive/singleMachineInactiveData", inactive_payload, access_token))
     error_payload = {
         "machineId": machine_id,
         "nFilter": {},
@@ -278,9 +282,7 @@ def data_view():
         "fields": ["machineId", "arrivalTime", "zoneValue", "error", "logCounter"],
         "limit": 100
     }
-    error_data = fetch_data(f"{base_url}/machine/singleErrorData", error_payload, access_token)
-    error_df = structure_data(error_data, include_error_metadata=True)
-
+    error_df = structure_data(fetch_data(f"{base_url}/machine/singleErrorData", error_payload, access_token), include_error_metadata=True)
     device_df = fetch_device_info_for_machine(machine_id, access_token)
     fota_df = fetch_fota_history_for_machine(machine_id, access_token)
     cota_df = fetch_cota_history_for_machine(machine_id, access_token)
@@ -353,28 +355,28 @@ def data_view():
             </thead>
           </table>
         </div>
-        <div class="table-responsive mt-4">
+        <div class="table-responsive">
           <h4>Inactive Data</h4>
           {{ inactive_df.to_html(classes='table table-striped table-bordered', index=False) | safe }}
         </div>
-        <div class="table-responsive mt-4">
+        <div class="table-responsive">
           <h4>Error Logs</h4>
           {{ error_df.to_html(classes='table table-striped table-bordered', index=False) | safe }}
         </div>
-        <div class="table-responsive mt-4">
+        <div class="table-responsive">
           <h4>Device Information</h4>
           {{ device_df.to_html(classes='table table-striped table-bordered', index=False) | safe }}
         </div>
-        <div class="table-responsive mt-4">
+        <div class="table-responsive">
           <h4>FOTA History</h4>
           {{ fota_df.to_html(classes='table table-striped table-bordered', index=False) | safe }}
         </div>
-        <div class="table-responsive mt-4">
+        <div class="table-responsive">
           <h4>COTA History</h4>
           {{ cota_df.to_html(classes='table table-striped table-bordered', index=False) | safe }}
         </div>
       </div>
-      <!-- (Modal HTML for filters can be added here if needed) -->
+      <!-- (Modal HTML for filters omitted for brevity) -->
       <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
       <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
       <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -438,7 +440,7 @@ def data_view():
             },
             columns: machineColumns
           });
-          // Additional filter event handlers can be added here.
+          // (Attach filter event handlers as needed)
         });
       </script>
     </body>
@@ -449,19 +451,16 @@ def data_view():
 
 @app.route('/api/machine_data', methods=['GET', 'POST'])
 def machine_data_lazy():
-    # Retrieve data from GET or POST
     if request.method == 'GET':
         data = request.args.to_dict()
     else:
         data = request.get_json() or {}
-
     draw = data.get('draw', 1)
     start = int(data.get('start', 0))
     length = int(data.get('length', 10))
     machine_id = data.get('machine_id', None)
     if not machine_id:
         return jsonify({"draw": draw, "recordsTotal": 0, "recordsFiltered": 0, "data": []})
-
     access_token = get_access_token()
     if not access_token:
         return jsonify({"error": "Failed to obtain access token from remote API."}), 503
@@ -477,8 +476,7 @@ def machine_data_lazy():
         "limit": 100
     }, access_token)
     df_all = structure_data(all_data)
-
-    # Define filter criteria
+    
     filters = {
         "aqi_min": data.get("aqi_min", None),
         "aqi_max": data.get("aqi_max", None),
@@ -501,7 +499,6 @@ def machine_data_lazy():
         "zone4_diff_min": data.get("zone4_diff_min", None),
         "zone4_diff_max": data.get("zone4_diff_max", None)
     }
-
     # Apply arrival date/time filters
     if filters["arrivalDate_min"]:
         df_all = df_all[df_all["Arrival Date"] >= filters["arrivalDate_min"]]
@@ -511,7 +508,6 @@ def machine_data_lazy():
         df_all = df_all[df_all["Arrival Time"] >= filters["arrivalTime_min"]]
     if filters["arrivalTime_max"]:
         df_all = df_all[df_all["Arrival Time"] <= filters["arrivalTime_max"]]
-
     # Apply numeric filters
     for col in ["aqi", "humidity", "roomTemperature", "busVoltage"]:
         if col in df_all.columns:
@@ -528,14 +524,16 @@ def machine_data_lazy():
                     df_all = df_all[df_all[col] <= max_val]
                 except Exception:
                     pass
-
-    # Compute differences for zone temperatures and apply filters
+    # Compute differences for zone temperatures
     for zone in [1, 2, 3, 4]:
         temp_col = f"ZoneTemperature4_item{zone}"
         req_col = f"requiredTemperature_item{zone}"
         diff_col = f"zone{zone}_diff"
         if temp_col in df_all.columns and req_col in df_all.columns:
             df_all[diff_col] = pd.to_numeric(df_all[temp_col], errors='coerce') - pd.to_numeric(df_all[req_col], errors='coerce')
+    # Apply zone difference filters
+    for zone in [1, 2, 3, 4]:
+        diff_col = f"zone{zone}_diff"
         if filters.get(f"zone{zone}_diff_min"):
             try:
                 min_val = float(filters[f"zone{zone}_diff_min"])
@@ -548,9 +546,9 @@ def machine_data_lazy():
                 df_all = df_all[df_all[diff_col] <= max_val]
             except Exception:
                 pass
-
     total = len(df_all)
     df_page = df_all.iloc[start:start+length]
+    # Convert the dataframe to a list of dicts with native types
     data_records = df_to_records(df_page)
     return jsonify({
         "draw": draw,
@@ -564,16 +562,13 @@ def dashboard_graphs():
     machine_id = request.args.get('machine_id')
     if not machine_id:
         return "Machine ID not provided", 400
-
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     start_time = request.args.get('start_time')
     end_time = request.args.get('end_time')
-
     access_token = get_access_token()
     if not access_token:
         return "Failed to obtain access token", 503
-
     all_data = fetch_data(f"{base_url}/machine/single", {
         "machineId": machine_id,
         "nFilter": {},
@@ -592,10 +587,9 @@ def dashboard_graphs():
         df = df[df["Device local Time"] >= start_time]
     if end_time:
         df = df[df["Device local Time"] <= end_time]
-
     x_values = df["Device local Time"].tolist()[::-1]
 
-    # Helper function to get zone chart data
+    # Helper to get zone chart data
     def get_zone_data(zone):
         temp = df.get(f"ZoneTemperature4_item{zone}", pd.Series([])).tolist()[::-1]
         req = df.get(f"requiredTemperature_item{zone}", pd.Series([])).tolist()[::-1]
@@ -616,7 +610,6 @@ def dashboard_graphs():
     zone2_temp, zone2_req, zone2_heater, zone2_ymin, zone2_ymax = get_zone_data(2)
     zone3_temp, zone3_req, zone3_heater, zone3_ymin, zone3_ymax = get_zone_data(3)
     zone4_temp, zone4_req, zone4_heater, zone4_ymin, zone4_ymax = get_zone_data(4)
-
     person_in_bed = df.get("timeInBedSensor", pd.Series([])).tolist()
     bus_voltage    = df.get("busVoltage", pd.Series([])).tolist()
     aqi_data       = df.get("aqi", pd.Series([])).tolist()
@@ -639,57 +632,27 @@ def dashboard_graphs():
          <h1>Dashboard for Machine {{ machine_id }}</h1>
          <form method="get" action="/dashboard" class="row g-3 mb-4">
            <input type="hidden" name="machine_id" value="{{ machine_id }}">
-           <div class="col-auto">
-             <label for="start_date" class="col-form-label">Start Date</label>
-           </div>
-           <div class="col-auto">
-             <input type="date" id="start_date" name="start_date" class="form-control" value="{{ request.args.get('start_date', '') }}">
-           </div>
-           <div class="col-auto">
-             <label for="end_date" class="col-form-label">End Date</label>
-           </div>
-           <div class="col-auto">
-             <input type="date" id="end_date" name="end_date" class="form-control" value="{{ request.args.get('end_date', '') }}">
-           </div>
-           <div class="col-auto">
-             <label for="start_time" class="col-form-label">Start Time</label>
-           </div>
-           <div class="col-auto">
-             <input type="time" id="start_time" name="start_time" class="form-control" value="{{ request.args.get('start_time', '') }}">
-           </div>
-           <div class="col-auto">
-             <label for="end_time" class="col-form-label">End Time</label>
-           </div>
-           <div class="col-auto">
-             <input type="time" id="end_time" name="end_time" class="form-control" value="{{ request.args.get('end_time', '') }}">
-           </div>
-           <div class="col-auto">
-             <button type="submit" class="btn btn-primary">Apply Date Filter</button>
-           </div>
+           <div class="col-auto"><label for="start_date" class="col-form-label">Start Date</label></div>
+           <div class="col-auto"><input type="date" id="start_date" name="start_date" class="form-control" value="{{ request.args.get('start_date', '') }}"></div>
+           <div class="col-auto"><label for="end_date" class="col-form-label">End Date</label></div>
+           <div class="col-auto"><input type="date" id="end_date" name="end_date" class="form-control" value="{{ request.args.get('end_date', '') }}"></div>
+           <div class="col-auto"><label for="start_time" class="col-form-label">Start Time</label></div>
+           <div class="col-auto"><input type="time" id="start_time" name="start_time" class="form-control" value="{{ request.args.get('start_time', '') }}"></div>
+           <div class="col-auto"><label for="end_time" class="col-form-label">End Time</label></div>
+           <div class="col-auto"><input type="time" id="end_time" name="end_time" class="form-control" value="{{ request.args.get('end_time', '') }}"></div>
+           <div class="col-auto"><button type="submit" class="btn btn-primary">Apply Date Filter</button></div>
          </form>
-         <div class="mb-4">
-           <a href="/data?machine_id={{ machine_id }}" class="btn btn-secondary">Back to Data View</a>
-         </div>
-         <h3>Zone 1</h3>
-         <canvas id="chartZone1"></canvas>
-         <h3>Zone 2</h3>
-         <canvas id="chartZone2"></canvas>
-         <h3>Zone 3</h3>
-         <canvas id="chartZone3"></canvas>
-         <h3>Zone 4</h3>
-         <canvas id="chartZone4"></canvas>
-         <h3>Person in Bed</h3>
-         <canvas id="chartPersonInBed"></canvas>
-         <h3>Bus Voltage</h3>
-         <canvas id="chartBusVoltage"></canvas>
-         <h3>AQI</h3>
-         <canvas id="chartAQI"></canvas>
-         <h3>Humidity</h3>
-         <canvas id="chartHumidity"></canvas>
-         <h3>Room Temperature</h3>
-         <canvas id="chartRoomTemp"></canvas>
-         <h3>Enclosure Temperature</h3>
-         <canvas id="chartEnclosureTemp"></canvas>
+         <div class="mb-4"><a href="/data?machine_id={{ machine_id }}" class="btn btn-secondary">Back to Data View</a></div>
+         <h3>Zone 1</h3><canvas id="chartZone1"></canvas>
+         <h3>Zone 2</h3><canvas id="chartZone2"></canvas>
+         <h3>Zone 3</h3><canvas id="chartZone3"></canvas>
+         <h3>Zone 4</h3><canvas id="chartZone4"></canvas>
+         <h3>Person in Bed</h3><canvas id="chartPersonInBed"></canvas>
+         <h3>Bus Voltage</h3><canvas id="chartBusVoltage"></canvas>
+         <h3>AQI</h3><canvas id="chartAQI"></canvas>
+         <h3>Humidity</h3><canvas id="chartHumidity"></canvas>
+         <h3>Room Temperature</h3><canvas id="chartRoomTemp"></canvas>
+         <h3>Enclosure Temperature</h3><canvas id="chartEnclosureTemp"></canvas>
       </div>
       <script>
         function createZoneChart(canvasId, xValues, tempData, reqData, heaterData, primaryMin, primaryMax) {
@@ -716,15 +679,9 @@ def dashboard_graphs():
         function createSingleSeriesChart(canvasId, xValues, dataValues, yAxisTitle, chartTitle, yMin, yMax) {
           new Chart(document.getElementById(canvasId).getContext('2d'), {
             type: 'line',
-            data: {
-              labels: xValues,
-              datasets: [{ label: yAxisTitle, data: dataValues, borderColor: 'rgb(75, 192, 192)', fill: false, borderWidth: 1 }]
-            },
+            data: { labels: xValues, datasets: [{ label: yAxisTitle, data: dataValues, borderColor: 'rgb(75, 192, 192)', fill: false, borderWidth: 1 }] },
             options: {
-              scales: {
-                x: { title: { display: true, text: 'Device Local Time' } },
-                y: { title: { display: true, text: yAxisTitle }, min: yMin, max: yMax }
-              },
+              scales: { x: { title: { display: true, text: 'Device Local Time' } }, y: { title: { display: true, text: yAxisTitle }, min: yMin, max: yMax } },
               plugins: { legend: { position: 'bottom' }, title: { display: true, text: chartTitle } }
             }
           });
