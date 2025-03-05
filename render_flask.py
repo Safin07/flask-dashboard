@@ -15,7 +15,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Update LOGO_PATH as needed
-LOGO_PATH = "/Users/safinchowdhury/Documents/logo3.png"
+LOGO_PATH = "logo3.png"
 
 app.secret_key = "some_secret_key_for_session"
 
