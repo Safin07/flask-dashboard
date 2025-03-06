@@ -15,9 +15,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 app = Flask(__name__)
 CORS(app)
 
-# Path to your logo image (adjust as needed)
-
-LOGO_PATH = "logo3.png"
+# Update LOGO_PATH as needed. Make sure logo3.png is placed in a 'static' folder in your repo.
+LOGO_PATH = os.path.join(os.path.dirname(__file__), 'static', 'logo3.png')
 
 app.secret_key = "some_secret_key_for_session"
 
@@ -59,10 +58,6 @@ def get_access_token():
         return None
 
 def convert_to_cest(timestamp):
-    """
-    Converts a given timestamp to CEST.
-    Also converts milliseconds (if needed) to seconds.
-    """
     try:
         if timestamp is None:
             return "", ""
@@ -146,28 +141,136 @@ def fetch_data(url, payload, access_token, max_pages=None):
             break
     return all_records
 
-# For brevity, functions for fetching device info, FOTA and COTA histories are omitted or can be similarly defined.
-
-# ---------------------- HELPER FOR COMBINED DATE+TIME FILTERING ----------------------
-def parse_date_time(date_str, time_str):
+def fetch_latest_day_data(machine_id, access_token):
     """
-    Parse 'YYYY-MM-DD' and 'HH:MM' into a datetime object.
-    If time_str is missing, default to 00:00.
+    Fetch only the data for the latest active day.
+    This function iterates over pages until it encounters a record from a previous day.
     """
-    if not date_str:
-        return None
-    if not time_str:
-        time_str = "00:00"
-    dt_str = f"{date_str} {time_str}"
-    return datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+    url = f"{base_url}/machine/single"
+    all_records = []
+    page = 1
+    latest_date = None
+    while True:
+        payload = {
+            "machineId": machine_id,
+            "nFilter": {},
+            "sortBy": "DESC",
+            "sortValue": "timeStamp",
+            "download": 0,
+            "fields": [],
+            "limit": 100,
+            "page": page
+        }
+        local_headers = {"Content-Type": "application/json", "x-access-token": access_token}
+        try:
+            response = requests.post(url, json=payload, headers=local_headers, verify=False, timeout=30)
+            response.raise_for_status()
+            records = response.json().get("data", {}).get("result", [])
+            if not records:
+                break
+            if page == 1:
+                # Use the date from the first record as the latest active day.
+                first_record = records[0]
+                latest_date, _ = convert_to_cest(first_record.get("timeStamp"))
+            for record in records:
+                d, _ = convert_to_cest(record.get("timeStamp"))
+                if d == latest_date:
+                    all_records.append(record)
+                else:
+                    # As soon as we see data from an older day, we can stop.
+                    return all_records
+            page += 1
+        except requests.exceptions.RequestException as e:
+            logging.error("Error fetching latest day data: %s", e)
+            break
+    return all_records
 
-# ---------------------- ROUTES ----------------------
+def fetch_device_info_for_machine(machine_id, access_token):
+    url = f"{base_url}/machine/singleMachineDetails"
+    local_headers = {"Content-Type": "application/json", "x-access-token": access_token}
+    try:
+        payload = {"machineId": machine_id}
+        resp = requests.post(url, json=payload, headers=local_headers, verify=False)
+        resp.raise_for_status()
+        data = resp.json().get("data", {}).get("result", [])
+        if not data:
+            return pd.DataFrame()
+        latest = None
+        for rec in data:
+            if rec.get("isLatest", False):
+                latest = rec
+                break
+        if not latest:
+            latest = max(data, key=lambda x: x.get("Id", 0))
+        if latest:
+            if "fwReleaseDate" in latest and latest["fwReleaseDate"]:
+                d, t = convert_to_cest(latest["fwReleaseDate"])
+                latest["fwReleaseDate"] = f"{d} {t}"
+            if "manufactureDate" in latest and latest["manufactureDate"]:
+                d, t = convert_to_cest(latest["manufactureDate"])
+                latest["manufactureDate"] = f"{d} {t}"
+        return pd.DataFrame([latest]) if latest else pd.DataFrame()
+    except requests.exceptions.RequestException as e:
+        logging.error("Error fetching device info: %s", e)
+        return pd.DataFrame()
+
+def fetch_fota_history_for_machine(machine_id, access_token):
+    url = f"{base_url}/fota/history"
+    payload = {
+        "page": 1,
+        "limit": 3000,
+        "status": ["Completed", "Pending", "Cancelled"],
+        "sortBy": "DESC",
+        "sortValue": "releasedId",
+        "machineId": machine_id
+    }
+    local_headers = {"Content-Type": "application/json", "x-access-token": access_token}
+    try:
+        resp = requests.post(url, json=payload, headers=local_headers, verify=False)
+        resp.raise_for_status()
+        fota_data = resp.json().get("data", [])
+        if 'result' in fota_data:
+            fota_data = fota_data['result']
+        filtered = [r for r in fota_data if r.get("machineId") == machine_id]
+        return pd.DataFrame(filtered) if filtered else pd.DataFrame()
+    except requests.exceptions.RequestException as e:
+        logging.error("Error fetching FOTA history: %s", e)
+        return pd.DataFrame()
+
+def fetch_cota_history_for_machine(machine_id, access_token):
+    url = f"{base_url}/device/cotaHistory"
+    payload = {
+        "page": 1,
+        "limit": 3000,
+        "status": ["Completed", "Pending", "Cancelled"],
+        "sortBy": "DESC",
+        "sortValue": "releasedId",
+        "machineId": machine_id
+    }
+    local_headers = {"Content-Type": "application/json", "x-access-token": access_token}
+    try:
+        resp = requests.post(url, json=payload, headers=local_headers, verify=False)
+        resp.raise_for_status()
+        cota_data = resp.json().get("data", [])
+        if 'result' in cota_data:
+            cota_data = cota_data['result']
+        filtered = [r for r in cota_data if r.get("machineId") == machine_id]
+        return pd.DataFrame(filtered) if filtered else pd.DataFrame()
+    except requests.exceptions.RequestException as e:
+        logging.error("Error fetching COTA history: %s", e)
+        return pd.DataFrame()
+
+# ----- Routes -----
 
 @app.route('/', methods=['GET'])
 def home():
-    with open(LOGO_PATH, "rb") as f:
-        logo_data = f.read()
-    logo_base64 = base64.b64encode(logo_data).decode('utf-8')
+    try:
+        with open(LOGO_PATH, "rb") as f:
+            logo_data = f.read()
+        logo_base64 = base64.b64encode(logo_data).decode('utf-8')
+    except Exception as e:
+        logging.error("Error loading logo: %s", e)
+        logo_base64 = ""
     return render_template_string('''
     <!DOCTYPE html>
     <html lang="en">
@@ -184,7 +287,11 @@ def home():
     </head>
     <body>
       <div class="container logo-container">
-        <img src="data:image/png;base64,{{ logo_base64 }}" alt="Logo" height="80">
+        {% if logo_base64 %}
+          <img src="data:image/png;base64,{{ logo_base64 }}" alt="Logo" height="80">
+        {% else %}
+          <h2>Machine Data Dashboard</h2>
+        {% endif %}
       </div>
       <div class="container">
         <h1 class="mt-5">Machine Data Dashboard</h1>
@@ -231,11 +338,9 @@ def data_view():
         "limit": 100
     }
     error_df = structure_data(fetch_data(f"{base_url}/machine/singleErrorData", error_payload, access_token), include_error_metadata=True)
-    
-    # For brevity, device info, FOTA and COTA data are shown as empty DataFrames.
-    device_df = pd.DataFrame()
-    fota_df = pd.DataFrame()
-    cota_df = pd.DataFrame()
+    device_df = fetch_device_info_for_machine(machine_id, access_token)
+    fota_df = fetch_fota_history_for_machine(machine_id, access_token)
+    cota_df = fetch_cota_history_for_machine(machine_id, access_token)
 
     return render_template_string('''
     <!DOCTYPE html>
@@ -393,13 +498,9 @@ def data_view():
       </script>
     </body>
     </html>
-    ''',
-    machine_id=machine_id,
-    inactive_df=inactive_df,
-    error_df=error_df,
-    device_df=device_df,
-    fota_df=fota_df,
-    cota_df=cota_df)
+    ''', machine_id=machine_id,
+         inactive_df=inactive_df, error_df=error_df,
+         device_df=device_df, fota_df=fota_df, cota_df=cota_df)
 
 @app.route('/api/machine_data', methods=['GET', 'POST'])
 def machine_data_lazy():
@@ -414,13 +515,11 @@ def machine_data_lazy():
     if not access_token:
         return jsonify({"error": "Failed to obtain access token from remote API."}), 503
 
-    filter_keys = [
-        "aqi_min", "aqi_max", "humidity_min", "humidity_max",
-        "roomTemperature_min", "roomTemperature_max", "busVoltage_min", "busVoltage_max",
-        "arrivalDate_min", "arrivalDate_max", "arrivalTime_min", "arrivalTime_max",
-        "zone1_diff_min", "zone1_diff_max", "zone2_diff_min", "zone2_diff_max",
-        "zone3_diff_min", "zone3_diff_max", "zone4_diff_min", "zone4_diff_max"
-    ]
+    filter_keys = ["aqi_min", "aqi_max", "humidity_min", "humidity_max",
+                   "roomTemperature_min", "roomTemperature_max", "busVoltage_min", "busVoltage_max",
+                   "arrivalDate_min", "arrivalDate_max", "arrivalTime_min", "arrivalTime_max",
+                   "zone1_diff_min", "zone1_diff_max", "zone2_diff_min", "zone2_diff_max",
+                   "zone3_diff_min", "zone3_diff_max", "zone4_diff_min", "zone4_diff_max"]
     filtering_applied = any(data.get(k) is not None for k in filter_keys)
 
     if not filtering_applied:
@@ -516,21 +615,25 @@ def dashboard_graphs():
     machine_id = request.args.get('machine_id')
     if not machine_id:
         return "Machine ID not provided", 400
-
     # Retrieve filters from query parameters.
     start_date = request.args.get('start_date')
-    end_date   = request.args.get('end_date')
+    end_date = request.args.get('end_date')
     start_time = request.args.get('start_time')
-    end_time   = request.args.get('end_time')
-
+    end_time = request.args.get('end_time')
     access_token = get_access_token()
     if not access_token:
         return "Failed to obtain access token", 503
 
-    # Fetch up to 100 records
-    all_data = fetch_data(
-        f"{base_url}/machine/single",
-        {
+    # If no date/time filters are provided, fetch only the latest active day's data.
+    if not (start_date or end_date or start_time or end_time):
+        all_data = fetch_latest_day_data(machine_id, access_token)
+        if all_data:
+            latest_date = convert_to_cest(all_data[0].get("timeStamp"))[0]
+            start_date = latest_date
+            end_date = latest_date
+    else:
+        # If filters are provided, fetch more data.
+        all_data = fetch_data(f"{base_url}/machine/single", {
             "machineId": machine_id,
             "nFilter": {},
             "sortBy": "DESC",
@@ -538,52 +641,22 @@ def dashboard_graphs():
             "download": 0,
             "fields": [],
             "limit": 100
-        },
-        access_token
-    )
+        }, access_token)
     df = structure_data(all_data)
-
-    # Create a combined datetime column for filtering and sorting
-    if not df.empty:
-        def combine_date_time(row):
-            d = row.get("Device local Date")
-            t = row.get("Device local Time")
-            if not d:
-                return None
-            if not t:
-                t = "00:00"
-            return datetime.strptime(f"{d} {t}", "%Y-%m-%d %H:%M")
-        df["CombinedDateTime"] = df.apply(combine_date_time, axis=1)
-        df.sort_values("CombinedDateTime", inplace=True)
-
-    # If no date/time filters provided, limit data to the latest active day
-    if not (start_date or end_date or start_time or end_time):
-        if not df.empty:
-            latest_dt = df["CombinedDateTime"].max()
-            latest_day = latest_dt.date()
-            df = df[df["CombinedDateTime"].dt.date == latest_day]
-            start_date = end_date = latest_day.strftime("%Y-%m-%d")
-    else:
-        def parse_filter_dt(date_str, time_str, is_start=True):
-            if not date_str:
-                return None
-            if not time_str:
-                return datetime.strptime(date_str + (" 00:00" if is_start else " 23:59"), "%Y-%m-%d %H:%M")
-            return datetime.strptime(date_str + " " + time_str, "%Y-%m-%d %H:%M")
-        start_dt = parse_filter_dt(start_date, start_time, True)
-        end_dt   = parse_filter_dt(end_date, end_time, False)
-        if start_dt:
-            df = df[df["CombinedDateTime"] >= start_dt]
-        if end_dt:
-            df = df[df["CombinedDateTime"] <= end_dt]
-
-    # Extract x-values and series in ascending order
-    x_values = df["Device local Time"].tolist()
+    if start_date:
+        df = df[df["Device local Date"] >= start_date]
+    if end_date:
+        df = df[df["Device local Date"] <= end_date]
+    if start_time:
+        df = df[df["Device local Time"] >= start_time]
+    if end_time:
+        df = df[df["Device local Time"] <= end_time]
+    x_values = df["Device local Time"].tolist()[::-1]
 
     def get_zone_data(zone):
-        temp = df.get(f"ZoneTemperature4_item{zone}", pd.Series([])).tolist()
-        req  = df.get(f"requiredTemperature_item{zone}", pd.Series([])).tolist()
-        heater = df.get(f"heaterCurrent_item{zone}", pd.Series([])).tolist()
+        temp = df.get(f"ZoneTemperature4_item{zone}", pd.Series([])).tolist()[::-1]
+        req = df.get(f"requiredTemperature_item{zone}", pd.Series([])).tolist()[::-1]
+        heater = df.get(f"heaterCurrent_item{zone}", pd.Series([])).tolist()[::-1]
         try:
             req_series = pd.to_numeric(df.get(f"requiredTemperature_item{zone}", pd.Series([])), errors='coerce').dropna()
             temp_series = pd.to_numeric(df.get(f"ZoneTemperature4_item{zone}", pd.Series([])), errors='coerce').dropna()
@@ -600,12 +673,11 @@ def dashboard_graphs():
     zone2_temp, zone2_req, zone2_heater, zone2_ymin, zone2_ymax = get_zone_data(2)
     zone3_temp, zone3_req, zone3_heater, zone3_ymin, zone3_ymax = get_zone_data(3)
     zone4_temp, zone4_req, zone4_heater, zone4_ymin, zone4_ymax = get_zone_data(4)
-
     person_in_bed = df.get("timeInBedSensor", pd.Series([])).tolist()
-    bus_voltage   = df.get("busVoltage", pd.Series([])).tolist()
-    aqi_data      = df.get("aqi", pd.Series([])).tolist()
-    humidity_data = df.get("humidity", pd.Series([])).tolist()
-    room_temp     = df.get("roomTemperature", pd.Series([])).tolist()
+    bus_voltage    = df.get("busVoltage", pd.Series([])).tolist()
+    aqi_data       = df.get("aqi", pd.Series([])).tolist()
+    humidity_data  = df.get("humidity", pd.Series([])).tolist()
+    room_temp      = df.get("roomTemperature", pd.Series([])).tolist()
     enclosure_temp = df.get("enclosureTemperature", pd.Series([])).tolist()
 
     return render_template_string('''
@@ -616,10 +688,7 @@ def dashboard_graphs():
       <title>Dashboard - Machine {{ machine_id }}</title>
       <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
       <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-      <style>
-        canvas { margin-bottom: 40px; }
-        .chart-title { margin-top: 2rem; }
-      </style>
+      <style> canvas { margin-bottom: 40px; } </style>
     </head>
     <body>
       <div class="container mt-4">
@@ -657,26 +726,16 @@ def dashboard_graphs():
          <div class="mb-4">
            <a href="/data?machine_id={{ machine_id }}" class="btn btn-secondary">Back to Data View</a>
          </div>
-         <h3 class="chart-title">Zone 1</h3>
-         <canvas id="chartZone1"></canvas>
-         <h3 class="chart-title">Zone 2</h3>
-         <canvas id="chartZone2"></canvas>
-         <h3 class="chart-title">Zone 3</h3>
-         <canvas id="chartZone3"></canvas>
-         <h3 class="chart-title">Zone 4</h3>
-         <canvas id="chartZone4"></canvas>
-         <h3 class="chart-title">Person in Bed</h3>
-         <canvas id="chartPersonInBed"></canvas>
-         <h3 class="chart-title">Bus Voltage</h3>
-         <canvas id="chartBusVoltage"></canvas>
-         <h3 class="chart-title">AQI</h3>
-         <canvas id="chartAQI"></canvas>
-         <h3 class="chart-title">Humidity</h3>
-         <canvas id="chartHumidity"></canvas>
-         <h3 class="chart-title">Room Temperature</h3>
-         <canvas id="chartRoomTemp"></canvas>
-         <h3 class="chart-title">Enclosure Temperature</h3>
-         <canvas id="chartEnclosureTemp"></canvas>
+         <h3>Zone 1</h3><canvas id="chartZone1"></canvas>
+         <h3>Zone 2</h3><canvas id="chartZone2"></canvas>
+         <h3>Zone 3</h3><canvas id="chartZone3"></canvas>
+         <h3>Zone 4</h3><canvas id="chartZone4"></canvas>
+         <h3>Person in Bed</h3><canvas id="chartPersonInBed"></canvas>
+         <h3>Bus Voltage</h3><canvas id="chartBusVoltage"></canvas>
+         <h3>AQI</h3><canvas id="chartAQI"></canvas>
+         <h3>Humidity</h3><canvas id="chartHumidity"></canvas>
+         <h3>Room Temperature</h3><canvas id="chartRoomTemp"></canvas>
+         <h3>Enclosure Temperature</h3><canvas id="chartEnclosureTemp"></canvas>
       </div>
       <script>
         function createZoneChart(canvasId, xValues, tempData, reqData, heaterData, primaryMin, primaryMax) {
@@ -723,26 +782,14 @@ def dashboard_graphs():
       </script>
     </body>
     </html>
-    ''',
-    machine_id=machine_id,
-    x_values=x_values,
-    zone1_temp=zone1_temp, zone1_req=zone1_req, zone1_heater=zone1_heater,
-    zone1_ymin=zone1_ymin, zone1_ymax=zone1_ymax,
-    zone2_temp=zone2_temp, zone2_req=zone2_req, zone2_heater=zone2_heater,
-    zone2_ymin=zone2_ymin, zone2_ymax=zone2_ymax,
-    zone3_temp=zone3_temp, zone3_req=zone3_req, zone3_heater=zone3_heater,
-    zone3_ymin=zone3_ymin, zone3_ymax=zone3_ymax,
-    zone4_temp=zone4_temp, zone4_req=zone4_req, zone4_heater=zone4_heater,
-    zone4_ymin=zone4_ymin, zone4_ymax=zone4_ymax,
-    person_in_bed=person_in_bed,
-    bus_voltage=bus_voltage,
-    aqi_data=aqi_data,
-    humidity_data=humidity_data,
-    room_temp=room_temp,
-    enclosure_temp=enclosure_temp,
-    start_date=start_date,
-    end_date=end_date
-    )
+    ''', machine_id=machine_id,
+         x_values=x_values,
+         zone1_temp=zone1_temp, zone1_req=zone1_req, zone1_heater=zone1_heater, zone1_ymin=zone1_ymin, zone1_ymax=zone1_ymax,
+         zone2_temp=zone2_temp, zone2_req=zone2_req, zone2_heater=zone2_heater, zone2_ymin=zone2_ymin, zone2_ymax=zone2_ymax,
+         zone3_temp=zone3_temp, zone3_req=zone3_req, zone3_heater=zone3_heater, zone3_ymin=zone3_ymin, zone3_ymax=zone3_ymax,
+         zone4_temp=zone4_temp, zone4_req=zone4_req, zone4_heater=zone4_heater, zone4_ymin=zone4_ymin, zone4_ymax=zone4_ymax,
+         person_in_bed=person_in_bed, bus_voltage=bus_voltage, aqi_data=aqi_data, humidity_data=humidity_data,
+         room_temp=room_temp, enclosure_temp=enclosure_temp, start_date=start_date, end_date=end_date)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
