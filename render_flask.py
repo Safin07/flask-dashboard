@@ -2,7 +2,7 @@ from flask import Flask, request, render_template_string, jsonify
 import requests
 import pandas as pd
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, time
 import pytz
 import base64
 from flask_cors import CORS
@@ -15,7 +15,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 app = Flask(__name__)
 CORS(app)
 
-# Update LOGO_PATH as needed. Make sure logo3.png is placed in a 'static' folder in your repo.
+# Update LOGO_PATH as needed. (Place logo3.png in a 'static' folder.)
 LOGO_PATH = os.path.join(os.path.dirname(__file__), 'static', 'logo3.png')
 
 app.secret_key = "some_secret_key_for_session"
@@ -144,7 +144,7 @@ def fetch_data(url, payload, access_token, max_pages=None):
 def fetch_latest_day_data(machine_id, access_token):
     """
     Fetch only the data for the latest active day.
-    This function iterates over pages until it encounters a record from a previous day.
+    Iterates over pages until a record from an older day is encountered.
     """
     url = f"{base_url}/machine/single"
     all_records = []
@@ -169,7 +169,6 @@ def fetch_latest_day_data(machine_id, access_token):
             if not records:
                 break
             if page == 1:
-                # Use the date from the first record as the latest active day.
                 first_record = records[0]
                 latest_date, _ = convert_to_cest(first_record.get("timeStamp"))
             for record in records:
@@ -177,7 +176,6 @@ def fetch_latest_day_data(machine_id, access_token):
                 if d == latest_date:
                     all_records.append(record)
                 else:
-                    # As soon as we see data from an older day, we can stop.
                     return all_records
             page += 1
         except requests.exceptions.RequestException as e:
@@ -260,8 +258,7 @@ def fetch_cota_history_for_machine(machine_id, access_token):
         logging.error("Error fetching COTA history: %s", e)
         return pd.DataFrame()
 
-# ----- Routes -----
-
+# ---------------------- ROUTES ----------------------
 @app.route('/', methods=['GET'])
 def home():
     try:
@@ -515,11 +512,14 @@ def machine_data_lazy():
     if not access_token:
         return jsonify({"error": "Failed to obtain access token from remote API."}), 503
 
-    filter_keys = ["aqi_min", "aqi_max", "humidity_min", "humidity_max",
-                   "roomTemperature_min", "roomTemperature_max", "busVoltage_min", "busVoltage_max",
-                   "arrivalDate_min", "arrivalDate_max", "arrivalTime_min", "arrivalTime_max",
-                   "zone1_diff_min", "zone1_diff_max", "zone2_diff_min", "zone2_diff_max",
-                   "zone3_diff_min", "zone3_diff_max", "zone4_diff_min", "zone4_diff_max"]
+    # For API filtering, we retain only date filters (time filters removed)
+    filter_keys = [
+        "aqi_min", "aqi_max", "humidity_min", "humidity_max",
+        "roomTemperature_min", "roomTemperature_max", "busVoltage_min", "busVoltage_max",
+        "arrivalDate_min", "arrivalDate_max",
+        "zone1_diff_min", "zone1_diff_max", "zone2_diff_min", "zone2_diff_max",
+        "zone3_diff_min", "zone3_diff_max", "zone4_diff_min", "zone4_diff_max"
+    ]
     filtering_applied = any(data.get(k) is not None for k in filter_keys)
 
     if not filtering_applied:
@@ -559,16 +559,12 @@ def machine_data_lazy():
             "fields": [],
             "limit": 100
         }
-        all_data = fetch_data(f"{base_url}/machine/single", payload_remote, access_token, max_pages=50)
+        all_data = fetch_data(f"{base_url}/machine/single", payload_remote, access_token, max_pages=5)
         df_all = structure_data(all_data)
         if data.get("arrivalDate_min"):
             df_all = df_all[df_all["Arrival Date"] >= data["arrivalDate_min"]]
         if data.get("arrivalDate_max"):
             df_all = df_all[df_all["Arrival Date"] <= data["arrivalDate_max"]]
-        if data.get("arrivalTime_min"):
-            df_all = df_all[df_all["Arrival Time"] >= data["arrivalTime_min"]]
-        if data.get("arrivalTime_max"):
-            df_all = df_all[df_all["Arrival Time"] <= data["arrivalTime_max"]]
         for col in ["aqi", "humidity", "roomTemperature", "busVoltage"]:
             if col in df_all.columns:
                 df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
@@ -615,48 +611,54 @@ def dashboard_graphs():
     machine_id = request.args.get('machine_id')
     if not machine_id:
         return "Machine ID not provided", 400
-    # Retrieve filters from query parameters.
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    start_time = request.args.get('start_time')
-    end_time = request.args.get('end_time')
+
+    # Retrieve the single date filter
+    selected_date = request.args.get('selected_date')
     access_token = get_access_token()
     if not access_token:
         return "Failed to obtain access token", 503
 
-    # If no date/time filters are provided, fetch only the latest active day's data.
-    if not (start_date or end_date or start_time or end_time):
+    # If no date is provided, use the latest active day's date.
+    if not selected_date:
         all_data = fetch_latest_day_data(machine_id, access_token)
         if all_data:
-            latest_date = convert_to_cest(all_data[0].get("timeStamp"))[0]
-            start_date = latest_date
-            end_date = latest_date
-    else:
-        # If filters are provided, fetch more data.
-        all_data = fetch_data(f"{base_url}/machine/single", {
-            "machineId": machine_id,
-            "nFilter": {},
-            "sortBy": "DESC",
-            "sortValue": "timeStamp",
-            "download": 0,
-            "fields": [],
-            "limit": 100
-        }, access_token)
+            selected_date = convert_to_cest(all_data[0].get("timeStamp"))[0]
+        else:
+            selected_date = datetime.today().strftime("%Y-%m-%d")
+
+    # Compute the time range: from previous day at 13:00 to selected day at 13:00
+    selected_date_dt = datetime.strptime(selected_date, "%Y-%m-%d")
+    start_dt = datetime.combine(selected_date_dt - timedelta(days=1), time(13, 0))
+    end_dt = datetime.combine(selected_date_dt, time(13, 0))
+
+    # Fetch data (limit pages for speed)
+    all_data = fetch_data(f"{base_url}/machine/single", {
+        "machineId": machine_id,
+        "nFilter": {},
+        "sortBy": "DESC",
+        "sortValue": "timeStamp",
+        "download": 0,
+        "fields": [],
+        "limit": 100
+    }, access_token, max_pages=5)
+
     df = structure_data(all_data)
-    if start_date:
-        df = df[df["Device local Date"] >= start_date]
-    if end_date:
-        df = df[df["Device local Date"] <= end_date]
-    if start_time:
-        df = df[df["Device local Time"] >= start_time]
-    if end_time:
-        df = df[df["Device local Time"] <= end_time]
-    x_values = df["Device local Time"].tolist()[::-1]
+    if not df.empty:
+        # Create a CombinedDateTime column for filtering
+        df["CombinedDateTime"] = pd.to_datetime(df["Device local Date"] + " " + df["Device local Time"], format="%Y-%m-%d %H:%M")
+        # Filter to include only data between start_dt and end_dt
+        df = df[(df["CombinedDateTime"] >= start_dt) & (df["CombinedDateTime"] <= end_dt)]
+        # Reverse the order so that the graph displays in ascending order (oldest to newest)
+        df = df.iloc[::-1]
+        # Create a label with date and time (date on first line, time on second)
+        df["DateTimeLabel"] = df["Device local Date"] + "\n" + df["Device local Time"]
+
+    x_values = df["DateTimeLabel"].tolist()
 
     def get_zone_data(zone):
-        temp = df.get(f"ZoneTemperature4_item{zone}", pd.Series([])).tolist()[::-1]
-        req = df.get(f"requiredTemperature_item{zone}", pd.Series([])).tolist()[::-1]
-        heater = df.get(f"heaterCurrent_item{zone}", pd.Series([])).tolist()[::-1]
+        temp = df.get(f"ZoneTemperature4_item{zone}", pd.Series([])).tolist()
+        req  = df.get(f"requiredTemperature_item{zone}", pd.Series([])).tolist()
+        heater = df.get(f"heaterCurrent_item{zone}", pd.Series([])).tolist()
         try:
             req_series = pd.to_numeric(df.get(f"requiredTemperature_item{zone}", pd.Series([])), errors='coerce').dropna()
             temp_series = pd.to_numeric(df.get(f"ZoneTemperature4_item{zone}", pd.Series([])), errors='coerce').dropna()
@@ -674,10 +676,10 @@ def dashboard_graphs():
     zone3_temp, zone3_req, zone3_heater, zone3_ymin, zone3_ymax = get_zone_data(3)
     zone4_temp, zone4_req, zone4_heater, zone4_ymin, zone4_ymax = get_zone_data(4)
     person_in_bed = df.get("timeInBedSensor", pd.Series([])).tolist()
-    bus_voltage    = df.get("busVoltage", pd.Series([])).tolist()
-    aqi_data       = df.get("aqi", pd.Series([])).tolist()
-    humidity_data  = df.get("humidity", pd.Series([])).tolist()
-    room_temp      = df.get("roomTemperature", pd.Series([])).tolist()
+    bus_voltage   = df.get("busVoltage", pd.Series([])).tolist()
+    aqi_data      = df.get("aqi", pd.Series([])).tolist()
+    humidity_data = df.get("humidity", pd.Series([])).tolist()
+    room_temp     = df.get("roomTemperature", pd.Series([])).tolist()
     enclosure_temp = df.get("enclosureTemperature", pd.Series([])).tolist()
 
     return render_template_string('''
@@ -688,7 +690,10 @@ def dashboard_graphs():
       <title>Dashboard - Machine {{ machine_id }}</title>
       <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
       <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-      <style> canvas { margin-bottom: 40px; } </style>
+      <style> 
+        canvas { margin-bottom: 40px; } 
+        .chart-title { margin-top: 2rem; }
+      </style>
     </head>
     <body>
       <div class="container mt-4">
@@ -696,28 +701,10 @@ def dashboard_graphs():
          <form method="get" action="/dashboard" class="row g-3 mb-4">
            <input type="hidden" name="machine_id" value="{{ machine_id }}">
            <div class="col-auto">
-             <label for="start_date" class="col-form-label">Start Date</label>
+             <label for="selected_date" class="col-form-label">Select Date</label>
            </div>
            <div class="col-auto">
-             <input type="date" id="start_date" name="start_date" class="form-control" value="{{ start_date }}">
-           </div>
-           <div class="col-auto">
-             <label for="end_date" class="col-form-label">End Date</label>
-           </div>
-           <div class="col-auto">
-             <input type="date" id="end_date" name="end_date" class="form-control" value="{{ end_date }}">
-           </div>
-           <div class="col-auto">
-             <label for="start_time" class="col-form-label">Start Time</label>
-           </div>
-           <div class="col-auto">
-             <input type="time" id="start_time" name="start_time" class="form-control" value="{{ request.args.get('start_time', '') }}">
-           </div>
-           <div class="col-auto">
-             <label for="end_time" class="col-form-label">End Time</label>
-           </div>
-           <div class="col-auto">
-             <input type="time" id="end_time" name="end_time" class="form-control" value="{{ request.args.get('end_time', '') }}">
+             <input type="date" id="selected_date" name="selected_date" class="form-control" value="{{ selected_date }}">
            </div>
            <div class="col-auto">
              <button type="submit" class="btn btn-primary">Apply Date Filter</button>
@@ -726,16 +713,26 @@ def dashboard_graphs():
          <div class="mb-4">
            <a href="/data?machine_id={{ machine_id }}" class="btn btn-secondary">Back to Data View</a>
          </div>
-         <h3>Zone 1</h3><canvas id="chartZone1"></canvas>
-         <h3>Zone 2</h3><canvas id="chartZone2"></canvas>
-         <h3>Zone 3</h3><canvas id="chartZone3"></canvas>
-         <h3>Zone 4</h3><canvas id="chartZone4"></canvas>
-         <h3>Person in Bed</h3><canvas id="chartPersonInBed"></canvas>
-         <h3>Bus Voltage</h3><canvas id="chartBusVoltage"></canvas>
-         <h3>AQI</h3><canvas id="chartAQI"></canvas>
-         <h3>Humidity</h3><canvas id="chartHumidity"></canvas>
-         <h3>Room Temperature</h3><canvas id="chartRoomTemp"></canvas>
-         <h3>Enclosure Temperature</h3><canvas id="chartEnclosureTemp"></canvas>
+         <h3 class="chart-title">Zone 1</h3>
+         <canvas id="chartZone1"></canvas>
+         <h3 class="chart-title">Zone 2</h3>
+         <canvas id="chartZone2"></canvas>
+         <h3 class="chart-title">Zone 3</h3>
+         <canvas id="chartZone3"></canvas>
+         <h3 class="chart-title">Zone 4</h3>
+         <canvas id="chartZone4"></canvas>
+         <h3 class="chart-title">Person in Bed</h3>
+         <canvas id="chartPersonInBed"></canvas>
+         <h3 class="chart-title">Bus Voltage</h3>
+         <canvas id="chartBusVoltage"></canvas>
+         <h3 class="chart-title">AQI</h3>
+         <canvas id="chartAQI"></canvas>
+         <h3 class="chart-title">Humidity</h3>
+         <canvas id="chartHumidity"></canvas>
+         <h3 class="chart-title">Room Temperature</h3>
+         <canvas id="chartRoomTemp"></canvas>
+         <h3 class="chart-title">Enclosure Temperature</h3>
+         <canvas id="chartEnclosureTemp"></canvas>
       </div>
       <script>
         function createZoneChart(canvasId, xValues, tempData, reqData, heaterData, primaryMin, primaryMax) {
@@ -751,7 +748,7 @@ def dashboard_graphs():
             },
             options: {
               scales: {
-                x: { title: { display: true, text: 'Device Local Time' } },
+                x: { title: { display: true, text: 'Date & Time' } },
                 y: { title: { display: true, text: 'Temperature / Required Temp' }, min: primaryMin, max: primaryMax },
                 y1: { title: { display: true, text: 'Heater Current' }, position: 'right', min: 500, max: 3000, grid: { drawOnChartArea: false } }
               },
@@ -764,7 +761,7 @@ def dashboard_graphs():
             type: 'line',
             data: { labels: xValues, datasets: [{ label: yAxisTitle, data: dataValues, borderColor: 'rgb(75, 192, 192)', fill: false, borderWidth: 1 }] },
             options: {
-              scales: { x: { title: { display: true, text: 'Device Local Time' } }, y: { title: { display: true, text: yAxisTitle }, min: yMin, max: yMax } },
+              scales: { x: { title: { display: true, text: 'Date & Time' } }, y: { title: { display: true, text: yAxisTitle }, min: yMin, max: yMax } },
               plugins: { legend: { position: 'bottom' }, title: { display: true, text: chartTitle } }
             }
           });
@@ -782,14 +779,25 @@ def dashboard_graphs():
       </script>
     </body>
     </html>
-    ''', machine_id=machine_id,
-         x_values=x_values,
-         zone1_temp=zone1_temp, zone1_req=zone1_req, zone1_heater=zone1_heater, zone1_ymin=zone1_ymin, zone1_ymax=zone1_ymax,
-         zone2_temp=zone2_temp, zone2_req=zone2_req, zone2_heater=zone2_heater, zone2_ymin=zone2_ymin, zone2_ymax=zone2_ymax,
-         zone3_temp=zone3_temp, zone3_req=zone3_req, zone3_heater=zone3_heater, zone3_ymin=zone3_ymin, zone3_ymax=zone3_ymax,
-         zone4_temp=zone4_temp, zone4_req=zone4_req, zone4_heater=zone4_heater, zone4_ymin=zone4_ymin, zone4_ymax=zone4_ymax,
-         person_in_bed=person_in_bed, bus_voltage=bus_voltage, aqi_data=aqi_data, humidity_data=humidity_data,
-         room_temp=room_temp, enclosure_temp=enclosure_temp, start_date=start_date, end_date=end_date)
+    ''',
+    machine_id=machine_id,
+    x_values=x_values,
+    zone1_temp=zone1_temp, zone1_req=zone1_req, zone1_heater=zone1_heater,
+    zone1_ymin=zone1_ymin, zone1_ymax=zone1_ymax,
+    zone2_temp=zone2_temp, zone2_req=zone2_req, zone2_heater=zone2_heater,
+    zone2_ymin=zone2_ymin, zone2_ymax=zone2_ymax,
+    zone3_temp=zone3_temp, zone3_req=zone3_req, zone3_heater=zone3_heater,
+    zone3_ymin=zone3_ymin, zone3_ymax=zone3_ymax,
+    zone4_temp=zone4_temp, zone4_req=zone4_req, zone4_heater=zone4_heater,
+    zone4_ymin=zone4_ymin, zone4_ymax=zone4_ymax,
+    person_in_bed=person_in_bed,
+    bus_voltage=bus_voltage,
+    aqi_data=aqi_data,
+    humidity_data=humidity_data,
+    room_temp=room_temp,
+    enclosure_temp=enclosure_temp,
+    selected_date=selected_date
+    )
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
